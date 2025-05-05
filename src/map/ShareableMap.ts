@@ -99,11 +99,11 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         this.dataDataView = new DataView(this.dataMem.buffer);
     }
 
-    [Symbol.iterator](): IterableIterator<[K, V]> {
+    [Symbol.iterator](): MapIterator<[K, V]> {
         return this.entries();
     }
 
-    *entries(): IterableIterator<[K, V]> {
+    *entries(): MapIterator<[K, V]> {
         for (let i = 0; i < this.buckets; i++) {
             let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * ShareableMap.INT_SIZE);
             while (dataPointer !== 0) {
@@ -115,7 +115,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
     }
 
-    *keys(): IterableIterator<K> {
+    *keys(): MapIterator<K> {
         for (let i = 0; i < this.buckets; i++) {
             let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * ShareableMap.INT_SIZE);
             while (dataPointer !== 0) {
@@ -125,7 +125,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
     }
 
-    *values(): IterableIterator<V> {
+    *values(): MapIterator<V> {
         for (let i = 0; i < this.buckets; i++) {
             let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * 4);
             while (dataPointer !== 0) {
@@ -436,22 +436,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     /**
-     * Allocate a new buffer with a given capacity. This function will always try to allocate a SharedArrayBuffer (that
-     * can be used by multiple threads simultaneously). If SharedArrayBuffer's are not supported by the context in which
-     * this map is being used, a regular ArrayBuffer (that still can be transferred between threads) is used.
-     *
-     * A warning is printed to the console if this method had to fallback to regular ArrayBuffers.
-     */
-    private static allocateBuffer(bytes: number): ArrayBuffer {
-        try {
-            return new SharedArrayBuffer(bytes);
-        } catch (error) {
-            console.warn("Fallback to regular ArrayBuffer...");
-            return new ArrayBuffer(bytes);
-        }
-    }
-
-    /**
      * Convert a given element with type T to a string. If no custom serializer has been set for this map, the built-in
      * JSON.stringify function will be used.
      *
@@ -724,7 +708,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         const indexSize = 5 * 4 + buckets * ShareableMap.INT_SIZE;
 
         // @ts-ignore (shared is available in the most recent JS version).
-        this.indexMem = new WebAssembly.Memory({initial: Math.ceil(indexSize / ShareableMap.MEMORY_PAGE_SIZE), maximum: 65536, shared: true});
+        this.indexMem = this.allocateMemory(Math.ceil(indexSize / ShareableMap.MEMORY_PAGE_SIZE), 65536);
         this.indexDataView = new DataView(this.indexMem.buffer);
 
         // Free space starts from position 1 in the data array (instead of 0, which we use to indicate the end).
@@ -734,10 +718,23 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         const dataSizePages = Math.ceil(averageBytesPerValue * expectedSize / ShareableMap.MEMORY_PAGE_SIZE);
 
         // @ts-ignore (shared is available in the most recent JS version).
-        this.dataMem = new WebAssembly.Memory({initial: dataSizePages, maximum: 65536, shared: true});
+        this.dataMem = this.allocateMemory(dataSizePages, 65536);
         this.dataDataView = new DataView(this.dataMem.buffer);
 
         // Keep track of the size of the data part of the map.
         this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, dataSizePages * ShareableMap.MEMORY_PAGE_SIZE);
+    }
+
+    private allocateMemory(initial: number, maximum: number): WebAssembly.Memory {
+        try {
+            const params = { initial, maximum } as any;
+            if (typeof window !== 'undefined' && 'crossOriginIsolated' in window) {
+                params.shared = (window as any).crossOriginIsolated;
+            }
+            return new WebAssembly.Memory(params);
+        } catch (err) {
+            // Fallback to non-shared memory
+            return new WebAssembly.Memory({ initial, maximum });
+        }
     }
 }
