@@ -203,6 +203,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     set(key: K, value: V): this {
+        // console.log(`Buckets in use: ${this.getBucketsInUse()}`);
+
         const keyString = this.stringifyElement<K>(key);
         const maxKeyLength = this.stringEncoder.maximumLength(keyString);
 
@@ -312,6 +314,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
                 // Update linked list pointers
                 this.updateLinkedPointer(bucketPointer, startPos, this.dataView);
             }
+
+            // console.log(`Current load factor is: ${this.getBucketsInUse() / this.buckets}`);
 
             // If the load factor exceeds the recommended value, we need to rehash the map to make sure performance stays
             // acceptable.
@@ -475,7 +479,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             // This bucket is being set and thus the pointer in the indexview should be updated.
             this.indexView.setUint32(ShareableMap.INDEX_TABLE_OFFSET + bucket * ShareableMap.INT_SIZE, 0);
 
-
             while (dataPointer !== 0) {
                 const keyLength = this.dataView.getUint32(dataPointer + 4);
                 const valueLength = this.dataView.getUint32(dataPointer + 8 );
@@ -513,6 +516,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * new buffer. This method should be called when not enough free space is available for elements to be stored.
      */
     private doubleDataStorage() {
+        console.log("Performing double data storage...");
+
         // Double size of the data storage array
         this.dataMem.grow(Math.round(this.dataMem.buffer.byteLength / ShareableMap.MEMORY_PAGE_SIZE));
         this.dataSize *= 2;
@@ -524,12 +529,18 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * location.
      */
     private doubleIndexStorage() {
-        this.indexMem.grow(Math.ceil((ShareableMap.INT_SIZE * (this.buckets * 2)) / ShareableMap.MEMORY_PAGE_SIZE));
+        console.log("Performing double index storage...");
+
+        const oldBuckets = this.buckets;
+        const newIndex = this.allocateMemory(Math.ceil((ShareableMap.INT_SIZE * (oldBuckets * 2)) / ShareableMap.MEMORY_PAGE_SIZE));
+        const newIndexView = new DataView(newIndex.buffer);
+
+        // this.indexMem.grow(Math.ceil((ShareableMap.INT_SIZE * (oldBuckets * 2)) / ShareableMap.MEMORY_PAGE_SIZE));
 
         let bucketsInUse: number = 0;
 
         // Now, we need to rehash all previous values and recompute the bucket pointers
-        for (let bucket = 0; bucket < this.buckets; bucket++) {
+        for (let bucket = 0; bucket < oldBuckets; bucket++) {
             let startPos = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + bucket * 4);
 
             while (startPos !== 0) {
@@ -537,18 +548,18 @@ export default class ShareableMap<K, V> extends Map<K, V> {
                 const key = this.readKeyFromDataObject(startPos);
 
                 const hash: number = fast1a32(key);
-                const newBucket = hash % (this.buckets * 2);
+                const newBucket = hash % (oldBuckets * 2);
 
-                const currentBucketContent = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4);
+                const currentBucketContent = newIndexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4);
                 // Should we directly update the bucket content or follow the links and update those?
                 if (currentBucketContent === 0) {
                     bucketsInUse++;
-                    this.indexView.setUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4, startPos);
+                    newIndexView.setUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4, startPos);
                 } else {
                     this.updateLinkedPointer(currentBucketContent, startPos, this.dataView);
                 }
 
-                // Follow link in the chain and update it's properties.
+                // Follow link in the chain and update its properties.
                 const newStartPos = this.dataView.getUint32(startPos);
                 this.dataView.setUint32(startPos, 0);
                 startPos = newStartPos;
@@ -557,9 +568,10 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
         // Copy metadata between the old and new buffer
         for (let i = 0; i < ShareableMap.INDEX_TABLE_OFFSET; i += 4) {
-            this.indexView.setUint32(i, this.indexView.getUint32(i));
+            newIndexView.setUint32(i, this.indexView.getUint32(i));
         }
 
+        this.indexMem = newIndex;
         // The buckets that are currently in use is the only thing that did change for the new index table.
         this.indexView.setUint32(4, bucketsInUse);
     }
@@ -707,8 +719,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         const buckets = Math.ceil(expectedSize / ShareableMap.LOAD_FACTOR)
         const indexSize = 5 * 4 + buckets * ShareableMap.INT_SIZE;
 
-        // @ts-ignore (shared is available in the most recent JS version).
-        this.indexMem = this.allocateMemory(Math.ceil(indexSize / ShareableMap.MEMORY_PAGE_SIZE), 65536);
+        this.indexMem = this.allocateMemory(Math.ceil(indexSize / ShareableMap.MEMORY_PAGE_SIZE));
         this.indexDataView = new DataView(this.indexMem.buffer);
 
         // Free space starts from position 1 in the data array (instead of 0, which we use to indicate the end).
@@ -718,23 +729,23 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         const dataSizePages = Math.ceil(averageBytesPerValue * expectedSize / ShareableMap.MEMORY_PAGE_SIZE);
 
         // @ts-ignore (shared is available in the most recent JS version).
-        this.dataMem = this.allocateMemory(dataSizePages, 65536);
+        this.dataMem = this.allocateMemory(dataSizePages);
         this.dataDataView = new DataView(this.dataMem.buffer);
 
         // Keep track of the size of the data part of the map.
         this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, dataSizePages * ShareableMap.MEMORY_PAGE_SIZE);
     }
 
-    private allocateMemory(initial: number, maximum: number): WebAssembly.Memory {
+    private allocateMemory(initial: number): WebAssembly.Memory {
+        const params = { initial, maximum: 65536} as any;
         try {
-            const params = { initial, maximum } as any;
             if (typeof window !== 'undefined' && 'crossOriginIsolated' in window) {
                 params.shared = (window as any).crossOriginIsolated;
             }
             return new WebAssembly.Memory(params);
         } catch (err) {
             // Fallback to non-shared memory
-            return new WebAssembly.Memory({ initial, maximum });
+            return new WebAssembly.Memory(params);
         }
     }
 }
