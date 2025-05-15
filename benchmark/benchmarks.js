@@ -1,5 +1,5 @@
 const MapBenchmark = require("./MapBenchmark.js");
-const ShareableMap = require("./../dist/bundle.js");
+const ShareableMap = require("./../dist/shared-memory-datastructures.js");
 
 function generator() {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);

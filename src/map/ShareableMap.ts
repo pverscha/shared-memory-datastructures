@@ -645,8 +645,19 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      */
     private readKeyFromDataObject(startPos: number): string {
         const keyLength = this.dataView.getUint32(startPos + 4);
-        const dataView = new DataView(this.dataMem.buffer, startPos + ShareableMap.DATA_OBJECT_OFFSET, keyLength)
-        return this.textDecoder.decode(dataView);
+
+        const textView = new DataView(new ArrayBuffer(keyLength));
+
+        for (let byte = 0; byte < keyLength; byte++) {
+            textView.setUint8(
+                byte,
+                this.dataView.getUint8(startPos + ShareableMap.DATA_OBJECT_OFFSET + byte)
+            );
+        }
+
+        // Is not allowed to be performed directly from SharedArrayBuffer by browsers...
+        // const dataView = new DataView(this.dataMem.buffer, startPos + ShareableMap.DATA_OBJECT_OFFSET, keyLength)
+        return this.textDecoder.decode(textView);
     }
 
     private readTypedKeyFromDataObject(startPos: number): K {
@@ -731,9 +742,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private allocateMemory(initial: number): WebAssembly.Memory {
         const params = { initial, maximum: 65536} as any;
         try {
-            if (typeof window !== 'undefined' && 'crossOriginIsolated' in window) {
-                params.shared = (window as any).crossOriginIsolated;
-            }
+            params.shared = true;
             return new WebAssembly.Memory(params);
         } catch (err) {
             // Fallback to non-shared memory
