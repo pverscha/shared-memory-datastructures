@@ -3,7 +3,7 @@ import ShareableMap from "../ShareableMap";
 describe("ShareableMap", () => {
     // How many key, value pairs will be generated? Retrieve them again later to check whether the corresponding values
     // are correct.
-    const pairAmount = 25000;
+    const pairAmount = 100000;
     const extraDuplicates = 500;
 
     const pairs: [string, string][] = [];
@@ -58,7 +58,7 @@ describe("ShareableMap", () => {
     });
 
     it("should correctly return all values that are stored in the map", () => {
-        const map = new ShareableMap<string, string>(512, 32);
+        const map = new ShareableMap<string, string>(1000, 64);
 
         for (const [key, value] of pairs) {
             map.set(key, value);

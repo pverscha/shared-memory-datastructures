@@ -1,6 +1,6 @@
 {
   "name": "shared-memory-datastructures",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "JavaScript Map implementation that uses a ShareableBuffer under the hood and can be passed to workers copy-free.",
   "main": "dist/shared-memory-datastructures.js",
   "module": "dist/shared-memory-datastructures.mjs",

@@ -203,8 +203,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     set(key: K, value: V): this {
-        // console.log(`Buckets in use: ${this.getBucketsInUse()}`);
-
         const keyString = this.stringifyElement<K>(key);
         const maxKeyLength = this.stringEncoder.maximumLength(keyString);
 
@@ -314,8 +312,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
                 // Update linked list pointers
                 this.updateLinkedPointer(bucketPointer, startPos, this.dataView);
             }
-
-            // console.log(`Current load factor is: ${this.getBucketsInUse() / this.buckets}`);
 
             // If the load factor exceeds the recommended value, we need to rehash the map to make sure performance stays
             // acceptable.
@@ -516,8 +512,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * new buffer. This method should be called when not enough free space is available for elements to be stored.
      */
     private doubleDataStorage() {
-        console.log("Performing double data storage...");
-
         // Double size of the data storage array
         this.dataMem.grow(Math.round(this.dataMem.buffer.byteLength / ShareableMap.MEMORY_PAGE_SIZE));
         this.dataSize *= 2;
@@ -529,13 +523,10 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * location.
      */
     private doubleIndexStorage() {
-        console.log("Performing double index storage...");
-
         const oldBuckets = this.buckets;
         const newIndex = this.allocateMemory(Math.ceil((ShareableMap.INT_SIZE * (oldBuckets * 2)) / ShareableMap.MEMORY_PAGE_SIZE));
         const newIndexView = new DataView(newIndex.buffer);
-
-        // this.indexMem.grow(Math.ceil((ShareableMap.INT_SIZE * (oldBuckets * 2)) / ShareableMap.MEMORY_PAGE_SIZE));
+        const newBuckets = (newIndexView.byteLength - ShareableMap.INDEX_TABLE_OFFSET) / ShareableMap.INT_SIZE;
 
         let bucketsInUse: number = 0;
 
@@ -548,15 +539,16 @@ export default class ShareableMap<K, V> extends Map<K, V> {
                 const key = this.readKeyFromDataObject(startPos);
 
                 const hash: number = fast1a32(key);
-                const newBucket = hash % (oldBuckets * 2);
+                const newBucket = hash % newBuckets;
 
-                const currentBucketContent = newIndexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4);
+                const newBucketContent = newIndexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4);
                 // Should we directly update the bucket content or follow the links and update those?
-                if (currentBucketContent === 0) {
+                if (newBucketContent === 0) {
                     bucketsInUse++;
                     newIndexView.setUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4, startPos);
                 } else {
-                    this.updateLinkedPointer(currentBucketContent, startPos, this.dataView);
+                    // The bucket already exists, add the new object to the end of the chain.
+                    this.updateLinkedPointer(newBucketContent, startPos, this.dataView);
                 }
 
                 // Follow link in the chain and update its properties.
@@ -628,7 +620,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     ): [number, V] | undefined {
         while (startPos !== 0) {
             const readHash = this.readHashFromDataObject(startPos);
-            if (readHash === hash) {
+            if (readHash === hash && key === this.readKeyFromDataObject(startPos)) {
                 return [startPos, this.readValueFromDataObject(startPos)];
             } else {
                 startPos = this.dataView.getUint32(startPos);
