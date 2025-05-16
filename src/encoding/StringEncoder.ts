@@ -11,25 +11,16 @@ export default class StringEncoder implements Serializable<string> {
     encode(stringValue: string, destination: Uint8Array): number {
         // Safari does not support the encodeInto function
         if (this.textEncoder.encodeInto !== undefined) {
-            try {
-                const writeResult = this.textEncoder.encodeInto(stringValue, destination);
-                return writeResult.written ? writeResult.written : 0;
-            } catch (error) {
-                // Try again with a separate, non-shared arraybuffer (some browsers do not accept SharedArrayBuffers
-                // for the encodeInto function yet).
-                const buffer = new Uint8Array(new ArrayBuffer(stringValue.length * 2));
-                const writeResult = this.textEncoder.encodeInto(stringValue, buffer);
-                const writeLength = writeResult.written ? writeResult.written : 0;
-                for (let i = 0; i < writeLength; i++) {
-                    destination[i] = buffer[i];
-                }
-                return writeLength;
-            }
+            // Try again with a separate, non-shared arraybuffer (some browsers do not accept SharedArrayBuffers
+            // for the encodeInto function yet).
+            const buffer = new Uint8Array(new ArrayBuffer(stringValue.length * 2));
+            const writeResult = this.textEncoder.encodeInto(stringValue, buffer);
+            const writeLength = writeResult.written ? writeResult.written : 0;
+            destination.set(buffer.subarray(0, writeLength));
+            return writeLength;
         } else {
             const encodedString = this.textEncoder.encode(stringValue);
-            for (let i = 0; i < encodedString.byteLength; i++) {
-                destination[i] = encodedString[i];
-            }
+            destination.set(encodedString);
             return encodedString.byteLength;
         }
     }
