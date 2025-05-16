@@ -51,14 +51,11 @@ describe("ShareableMap", () => {
             map.set(keysToInsert[i], valuesToInsert[i]);
         }
 
-        console.log([...map.keys()]);
-        console.log([...map.values()]);
-
         expect(map.size).toEqual(expectedMapSize);
     });
 
     it("should correctly return all values that are stored in the map", () => {
-        const map = new ShareableMap<string, string>(1000, 64);
+        const map = new ShareableMap<string, string>();
 
         for (const [key, value] of pairs) {
             map.set(key, value);

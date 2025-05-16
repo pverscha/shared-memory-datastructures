@@ -18,24 +18,27 @@
             keyValuePairs.push([generator(), generator()]);
         }
 
-        let startTime = new Date().getTime();
-        const map = new ShareableMap(keyValuePairs.length);
-        let endTime = new Date().getTime();
-        console.log(`Creating map took: ${endTime - startTime}ms`);
+        function benchmarkMap(map) {
+            let startTime = new Date().getTime();
+            for (const [key, value] of keyValuePairs) {
+                map.set(key, value);
+            }
+            let endTime = new Date().getTime();
+            console.log(`Setting values took: ${endTime - startTime}ms`);
 
-        startTime = new Date().getTime();
-        for (const [key, value] of keyValuePairs) {
-            map.set(key, value);
+            startTime = new Date().getTime();
+            for (const [key, value] of keyValuePairs) {
+                map.get(key);
+            }
+            endTime = new Date().getTime();
+            console.log(`Getting values took: ${endTime - startTime}ms`);
         }
-        endTime = new Date().getTime();
-        console.log(`Setting values took: ${endTime - startTime}ms`);
 
-        startTime = new Date().getTime();
-        for (const [key, value] of keyValuePairs) {
-            map.get(key);
-        }
-        endTime = new Date().getTime();
-        console.log(`Getting values took: ${endTime - startTime}ms`);
+        console.log("Started benchmarking ShareableMap...");
+        benchmarkMap(new ShareableMap(keyValuePairs.length));
+
+        console.log("Started benchmarking default Map...");
+        benchmarkMap(new Map());
     </script>
 </body>
 </html>

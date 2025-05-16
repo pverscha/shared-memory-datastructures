@@ -749,6 +749,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             return new WebAssembly.Memory(params);
         } catch (err) {
             // Fallback to non-shared memory
+            console.warn("Shared memory is not supported by this browser. Falling back to non-shared memory.");
             return new WebAssembly.Memory(params);
         }
     }
