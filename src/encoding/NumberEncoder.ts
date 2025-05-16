@@ -1,13 +1,15 @@
 import Serializable from "./Serializable";
 
 export default class NumberEncoder implements Serializable<number> {
-    decode(buffer: DataView): number {
+    decode(buffer: Uint8Array): number {
+        const bufferView = new DataView(buffer.buffer);
+
         // First byte indicates if we did store a float or an int
-        const numberType = buffer.getUint8(0);
+        const numberType = bufferView.getUint8(0);
         if (numberType === 0) {
-            return buffer.getInt32(1);
+            return bufferView.getInt32(1);
         } else {
-            return buffer.getFloat64(1);
+            return bufferView.getFloat64(1);
         }
     }
 

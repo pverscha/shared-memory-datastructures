@@ -4,7 +4,7 @@ export default class StringEncoder implements Serializable<string> {
     private textEncoder = new TextEncoder();
     private textDecoder = new TextDecoder();
 
-    decode(buffer: DataView): string {
+    decode(buffer: Uint8Array): string {
         return this.textDecoder.decode(buffer);
     }
 

@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>Title</title>
-    <script src="./../dist/bundle.js"></script>
 </head>
 <body>
-    <script>
+    <script type="module">
+        import {ShareableMap} from "./../dist/shared-memory-datastructures.js";
+
         function generator() {
             return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         }
@@ -17,22 +18,24 @@
             keyValuePairs.push([generator(), generator()]);
         }
 
-        const map = new SharedMemoryDatastructures.ShareableMap(keyValuePairs.length);
-        // const map = new Map();
+        let startTime = new Date().getTime();
+        const map = new ShareableMap(keyValuePairs.length);
+        let endTime = new Date().getTime();
+        console.log(`Creating map took: ${endTime - startTime}ms`);
 
+        startTime = new Date().getTime();
         for (const [key, value] of keyValuePairs) {
             map.set(key, value);
         }
+        endTime = new Date().getTime();
+        console.log(`Setting values took: ${endTime - startTime}ms`);
 
-        const startTime = new Date().getTime();
-
+        startTime = new Date().getTime();
         for (const [key, value] of keyValuePairs) {
             map.get(key);
         }
-
-        const endTime = new Date().getTime();
-
-        console.log((endTime - startTime) + "ms");
+        endTime = new Date().getTime();
+        console.log(`Getting values took: ${endTime - startTime}ms`);
     </script>
 </body>
 </html>

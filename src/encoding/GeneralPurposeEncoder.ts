@@ -4,7 +4,7 @@ import StringEncoder from "./StringEncoder";
 export default class GeneralPurposeEncoder implements Serializable<Object> {
     private readonly stringEncoder = new StringEncoder();
 
-    decode(buffer: DataView): Object {
+    decode(buffer: Uint8Array): Object {
         const stringValue = this.stringEncoder.decode(buffer);
         return JSON.parse(stringValue);
     }

@@ -16,7 +16,7 @@ export default interface Serializable<T> {
      * @param buffer The buffer that contains the encoded version of the object that needs to be retrieved.
      * @return A reconstructed, original version of the object itself.
      */
-    decode(buffer: DataView): T;
+    decode(buffer: Uint8Array): T;
 
     /**
      * Return an estimate for the maximum amount of bytes required to encode the given object. Note that this should

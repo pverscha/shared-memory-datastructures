@@ -46,11 +46,19 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     // Size of one memory page (in bytes), as defined by the WebAssembly standard
     private static readonly MEMORY_PAGE_SIZE = 65536;
 
+    // Default size of the decoder buffer that's always reused (in bytes)
+    private static readonly DECODER_BUFFER_SIZE = 16384;
+
     private indexMem!: WebAssembly.Memory;
     private dataMem!: WebAssembly.Memory;
 
-    private dataDataView!: DataView;
-    private indexDataView!: DataView;
+    private dataView!: DataView;
+    private indexView!: DataView;
+
+    // This buffer can be reused to decode the keys of each pair in the map (and avoids us having to reallocate a new
+    // block of memory for each `get` or `set` operation).
+    private decoderBuffer: ArrayBuffer = new ArrayBuffer(ShareableMap.DECODER_BUFFER_SIZE);
+    private currentDecoderBufferSize: number = ShareableMap.DECODER_BUFFER_SIZE;
 
     private textDecoder: TextDecoder = new TextDecoder();
 
@@ -94,9 +102,9 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      */
     public setBuffers(indexBuffer: WebAssembly.Memory, dataBuffer: WebAssembly.Memory) {
         this.indexMem = indexBuffer;
-        this.indexDataView = new DataView(this.indexMem.buffer);
+        this.indexView = new DataView(this.indexMem.buffer);
         this.dataMem = dataBuffer;
-        this.dataDataView = new DataView(this.dataMem.buffer);
+        this.dataView = new DataView(this.dataMem.buffer);
     }
 
     [Symbol.iterator](): MapIterator<[K, V]> {
@@ -199,7 +207,17 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     has(key: K): boolean {
-        return this.get(key) !== undefined;
+        let stringKey = this.stringifyElement<K>(key);
+        const [hash, bucket] = this.computeHashAndBucket(stringKey);
+
+        const returnValue = this.findValue(
+            this.indexView.getUint32(bucket + ShareableMap.INDEX_TABLE_OFFSET),
+            stringKey,
+            hash,
+            false
+        );
+
+        return returnValue !== undefined;
     }
 
     set(key: K, value: V): this {
@@ -328,20 +346,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         return this.indexView.getUint32(ShareableMap.INDEX_SIZE_OFFSET);
     }
 
-    private get dataView(): DataView {
-        if (this.dataDataView.buffer.byteLength !== this.dataMem.buffer.byteLength) {
-            this.dataDataView = new DataView(this.dataMem.buffer);
-        }
-        return this.dataDataView;
-    }
-
-    private get indexView(): DataView {
-        if (this.indexDataView.buffer.byteLength !== this.indexMem.buffer.byteLength) {
-            this.indexDataView = new DataView(this.indexMem.buffer);
-        }
-        return this.indexDataView;
-    }
-
     /**
      * @return The amount of buckets that are currently available in this map (either taken or non-taken, the total
      * number of buckets is returned).
@@ -451,6 +455,16 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         return stringVal;
     }
 
+    private getFittingDecoderBuffer(minimumSize: number): ArrayBuffer {
+        if (this.currentDecoderBufferSize < minimumSize) {
+            const nextPowerOfTwo = 2 ** Math.ceil(Math.log2(minimumSize));
+            this.decoderBuffer = new ArrayBuffer(nextPowerOfTwo);
+            this.currentDecoderBufferSize = nextPowerOfTwo;
+        }
+
+        return this.decoderBuffer;
+    }
+
     private computeHashAndBucket(key: string): [number, number] {
         const hash: number = fast1a32(key);
         // Bucket in which this value should be stored.
@@ -515,6 +529,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         // Double size of the data storage array
         this.dataMem.grow(Math.round(this.dataMem.buffer.byteLength / ShareableMap.MEMORY_PAGE_SIZE));
         this.dataSize *= 2;
+        this.dataView = new DataView(this.dataMem.buffer);
     }
 
     /**
@@ -564,6 +579,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
 
         this.indexMem = newIndex;
+        this.indexView = new DataView(this.indexMem.buffer);
         // The buckets that are currently in use is the only thing that did change for the new index table.
         this.indexView.setUint32(4, bucketsInUse);
     }
@@ -610,18 +626,21 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * @param startPos Position of the first data object in the linked list that should be examined.
      * @param key The key that we're currently looking for.
      * @param hash The hash that corresponds to the key that we are currently investigating.
+     * @param readValue Whether the value for this object should be decoded or not. If false, the second item in the
+     * returned tuple will be undefined.
      * @return The starting position of the data object and value associated with the given key. If no such key was
      * found, undefined is returned.
      */
     private findValue(
         startPos: number,
         key: string,
-        hash: number
-    ): [number, V] | undefined {
+        hash: number,
+        readValue: boolean = true
+    ): [number, V | undefined] | undefined {
         while (startPos !== 0) {
             const readHash = this.readHashFromDataObject(startPos);
             if (readHash === hash && key === this.readKeyFromDataObject(startPos)) {
-                return [startPos, this.readValueFromDataObject(startPos)];
+                return [startPos, readValue ? this.readValueFromDataObject(startPos) : undefined];
             } else {
                 startPos = this.dataView.getUint32(startPos);
             }
@@ -646,18 +665,14 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private readKeyFromDataObject(startPos: number): string {
         const keyLength = this.dataView.getUint32(startPos + 4);
 
-        const textView = new DataView(new ArrayBuffer(keyLength));
+        const sourceView = new Uint8Array(this.dataView.buffer, startPos + ShareableMap.DATA_OBJECT_OFFSET, keyLength);
 
-        for (let byte = 0; byte < keyLength; byte++) {
-            textView.setUint8(
-                byte,
-                this.dataView.getUint8(startPos + ShareableMap.DATA_OBJECT_OFFSET + byte)
-            );
-        }
+        const targetView = new Uint8Array(this.getFittingDecoderBuffer(keyLength), 0, keyLength);
+        targetView.set(sourceView);
 
         // Is not allowed to be performed directly from SharedArrayBuffer by browsers...
         // const dataView = new DataView(this.dataMem.buffer, startPos + ShareableMap.DATA_OBJECT_OFFSET, keyLength)
-        return this.textDecoder.decode(textView);
+        return this.textDecoder.decode(targetView);
     }
 
     private readTypedKeyFromDataObject(startPos: number): K {
@@ -681,23 +696,12 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
         const encoder = this.getEncoderById(this.dataView.getUint16(startPos + 14));
 
-        // Since some browsers do not support decoding from a SharedArrayBuffer, we had to disable this feature for now
-        // const dataView = new DataView(
-        //     this.data,
-        //     startPos + ShareableMap.DATA_OBJECT_OFFSET + keyLength,
-        //     valueLength
-        // );
+        const sourceView = new Uint8Array(this.dataView.buffer, startPos + ShareableMap.DATA_OBJECT_OFFSET + keyLength, valueLength);
 
-        const textView = new DataView(new ArrayBuffer(valueLength));
+        const targetView = new Uint8Array(this.getFittingDecoderBuffer(valueLength), 0, valueLength);
+        targetView.set(sourceView);
 
-        for (let byte = 0; byte < valueLength; byte++) {
-            textView.setUint8(
-                byte,
-                this.dataView.getUint8(startPos + ShareableMap.DATA_OBJECT_OFFSET + keyLength + byte)
-            );
-        }
-
-        return encoder.decode(textView);
+        return encoder.decode(targetView);
     }
 
     /**
@@ -723,7 +727,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         const indexSize = 5 * 4 + buckets * ShareableMap.INT_SIZE;
 
         this.indexMem = this.allocateMemory(Math.ceil(indexSize / ShareableMap.MEMORY_PAGE_SIZE));
-        this.indexDataView = new DataView(this.indexMem.buffer);
+        this.indexView = new DataView(this.indexMem.buffer);
 
         // Free space starts from position 1 in the data array (instead of 0, which we use to indicate the end).
         this.indexView.setUint32(ShareableMap.INDEX_FREE_START_INDEX_OFFSET, ShareableMap.INITIAL_DATA_OFFSET);
@@ -731,9 +735,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         // Size must be a multiple of 4
         const dataSizePages = Math.ceil(averageBytesPerValue * expectedSize / ShareableMap.MEMORY_PAGE_SIZE);
 
-        // @ts-ignore (shared is available in the most recent JS version).
         this.dataMem = this.allocateMemory(dataSizePages);
-        this.dataDataView = new DataView(this.dataMem.buffer);
+        this.dataView = new DataView(this.dataMem.buffer);
 
         // Keep track of the size of the data part of the map.
         this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, dataSizePages * ShareableMap.MEMORY_PAGE_SIZE);
