@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>Title</title>
-    <script src="./../dist/bundle.js"></script>
 </head>
 <body>
-    <script>
+    <script type="module">
+        import {ShareableMap} from "./../dist/shared-memory-datastructures.js";
+
         function generator() {
             return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         }
@@ -17,22 +18,37 @@
             keyValuePairs.push([generator(), generator()]);
         }
 
-        const map = new SharedMemoryDatastructures.ShareableMap(keyValuePairs.length);
-        // const map = new Map();
+        function benchmarkMap(map) {
+            let startTime = new Date().getTime();
+            for (const [key, value] of keyValuePairs) {
+                map.set(key, value);
+            }
+            let endTime = new Date().getTime();
+            console.log(`Setting values took: ${endTime - startTime}ms`);
 
-        for (const [key, value] of keyValuePairs) {
-            map.set(key, value);
+            startTime = new Date().getTime();
+            let foundItems = 0;
+            for (const [key, value] of keyValuePairs) {
+                if (map.has(key)) {
+                    foundItems++;
+                }
+            }
+            endTime = new Date().getTime();
+            console.log(`Checking has values took: ${endTime - startTime}ms. Found ${foundItems} items.`);
+
+            startTime = new Date().getTime();
+            for (const [key, value] of keyValuePairs) {
+                map.get(key);
+            }
+            endTime = new Date().getTime();
+            console.log(`Getting values took: ${endTime - startTime}ms`);
         }
 
-        const startTime = new Date().getTime();
+        console.log("Started benchmarking ShareableMap...");
+        benchmarkMap(new ShareableMap(keyValuePairs.length));
 
-        for (const [key, value] of keyValuePairs) {
-            map.get(key);
-        }
-
-        const endTime = new Date().getTime();
-
-        console.log((endTime - startTime) + "ms");
+        console.log("Started benchmarking default Map...");
+        benchmarkMap(new Map());
     </script>
 </body>
 </html>

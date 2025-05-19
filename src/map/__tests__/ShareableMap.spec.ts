@@ -3,20 +3,55 @@ import ShareableMap from "../ShareableMap";
 describe("ShareableMap", () => {
     // How many key, value pairs will be generated? Retrieve them again later to check whether the corresponding values
     // are correct.
-    const pairAmount = 10000;
+    const pairAmount = 100000;
+    const extraDuplicates = 500;
 
     const pairs: [string, string][] = [];
+    const pairResults = new Map<string, string>();
+
     for (let i = 0; i < pairAmount; i++) {
         const key = generateRandomString();
         const value = generateRandomString();
 
         pairs.push([key, value]);
+        pairResults.set(key, value);
     }
+
+    // Select 500 random pairs to add as duplicates (only the keys should be the same, the values can be different)
+    for (let i = 0; i < extraDuplicates; i++) {
+        const randomIndex = Math.floor(Math.random() * pairAmount);
+        const key = pairs[randomIndex][0];
+
+        const randomValue = generateRandomString();
+
+        pairs.push([key, randomValue]);
+        pairResults.set(key, randomValue);
+    }
+
+    // Since a key could be generated (at random) multiple times, we need to count the amount of unique keys to use in
+    // the tests.
+    const uniqueKeysCount = new Set(pairs.map(pair => pair[0])).size;
 
     beforeAll(() => {
         const { TextEncoder, TextDecoder } = require("util");
         globalThis.TextEncoder = TextEncoder;
         globalThis.TextDecoder = TextDecoder;
+    });
+
+    it("should correctly add duplicate keys only once", () => {
+        const map = new ShareableMap<string, number>();
+
+        const keysToInsert = ["a", "b", "c", "a", "d", "a"];
+        const valuesToInsert = [1, 2, 3, 4, 5, 6];
+
+        // Some keys occur multiple times
+        const expectedMapSize = 4;
+
+        for (let i = 0; i < keysToInsert.length; i++) {
+            map.set(keysToInsert[i], valuesToInsert[i]);
+        }
+
+        expect(map.size).toEqual(expectedMapSize);
     });
 
     it("should correctly return all values that are stored in the map", () => {
@@ -27,12 +62,12 @@ describe("ShareableMap", () => {
         }
 
         // Check that all these values are indeed present in the map
-        expect(map.size).toEqual(pairAmount);
+        expect(map.size).toEqual(uniqueKeysCount);
 
         for (const [key, value] of pairs) {
             expect(map.has(key)).toBeTruthy();
             const retrievedValue = map.get(key);
-            expect(retrievedValue).toEqual(value);
+            expect(retrievedValue).toEqual(pairResults.get(key));
         }
     });
 
