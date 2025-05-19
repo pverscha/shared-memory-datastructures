@@ -4,19 +4,17 @@ import StringEncoder from "./../encoding/StringEncoder";
 import NumberEncoder from "./../encoding/NumberEncoder";
 import GeneralPurposeEncoder from "./../encoding/GeneralPurposeEncoder";
 import ShareableMapOptions from "./ShareableMapOptions";
+import {TransferableState} from "./TransferableState";
 
 /**
  * Special implementation of the Map API that internally uses ArrayBuffers for it's data storage. These buffers can be
  * easily transferred between threads with a zero-copy cost, which allows to gain a much higher communication speed
- * between threads. You need to call `getBuffers()` and `setBuffers()` and manually transfer the buffers for this map
- * between threads to use this benefits.
+ * between threads. You need to call `toTransferableState()` and `fromTransferableState()` and manually transfer the
+ * buffers for this map between threads to use these benefits.
  *
  * NOTE: When no support for SharedArrayBuffers is available, this map will automatically fall back to regular
  * ArrayBuffers, which can also be transferred between threads (but cannot be used by multiple threads at the same
  * time).
- *
- * Note: This Map currently does not support deleting items or changing the values that belong to a key since this
- * would require extensive memory alignment and management.
  *
  * @author Pieter Verschaffelt
  */
@@ -95,19 +93,18 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     /**
-     * Creates a new ShareableMap from existing memory buffers. The buffers should come from another ShareableMap
-     * instance created beforehand. These buffers can be retrieved using `toBuffers()` on that ShareableMap.
+     * Creates a new ShareableMap from existing map state. The state should come from another ShareableMap instance
+     * created beforehand. This state can be retrieved using `toState()` on that ShareableMap.
+     *
      * Note that when the original ShareableMap used a custom serializer, the same type of serializer must also be
      * provided here.
      *
-     * @param indexBuffer Index table buffer
-     * @param dataBuffer Data storage buffer
-     * @param serializer Optional serializer for custom value types.
-     * @returns A new ShareableMap instance using the provided memory buffers
+     * @param state Object containing the index and data buffers
+     * @param serializer Optional serializer for custom value types
+     * @returns A new ShareableMap instance constructed from the provided state
      */
-    public static fromBuffers<K, V>(
-        indexBuffer: WebAssembly.Memory,
-        dataBuffer: WebAssembly.Memory,
+    public static fromTransferableState<K, V>(
+        { indexBuffer, dataBuffer }: TransferableState,
         serializer?: Serializable<V>
     ): ShareableMap<K, V> {
         const map = new ShareableMap<K, V>({ averageBytesPerValue: 0, expectedSize: 0, serializer });
@@ -116,11 +113,16 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     /**
-     * Get the internal buffers that represent this map and that can be transferred without cost between threads. Use
-     * setBuffers() to rebuild a ShareableMap after the buffers have been transferred.
+     * Get the internal buffers that represent this map and that can be transferred without cost between threads.
+     * Use fromState() to rebuild a ShareableMap after the buffers have been transferred.
+     *
+     * @returns An object containing the WebAssembly memory buffers that represent this map
      */
-    public toBuffers(): WebAssembly.Memory[] {
-        return [this.indexMem, this.dataMem];
+    public toTransferableState(): TransferableState {
+        return {
+            indexBuffer: this.indexMem,
+            dataBuffer: this.dataMem
+        };
     }
 
     /**
