@@ -27,6 +27,16 @@
             console.log(`Setting values took: ${endTime - startTime}ms`);
 
             startTime = new Date().getTime();
+            let foundItems = 0;
+            for (const [key, value] of keyValuePairs) {
+                if (map.has(key)) {
+                    foundItems++;
+                }
+            }
+            endTime = new Date().getTime();
+            console.log(`Checking has values took: ${endTime - startTime}ms. Found ${foundItems} items.`);
+
+            startTime = new Date().getTime();
             for (const [key, value] of keyValuePairs) {
                 map.get(key);
             }

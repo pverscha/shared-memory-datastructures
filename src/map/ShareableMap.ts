@@ -3,6 +3,7 @@ import Serializable from "./../encoding/Serializable";
 import StringEncoder from "./../encoding/StringEncoder";
 import NumberEncoder from "./../encoding/NumberEncoder";
 import GeneralPurposeEncoder from "./../encoding/GeneralPurposeEncoder";
+import ShareableMapOptions from "./ShareableMapOptions";
 
 /**
  * Special implementation of the Map API that internally uses ArrayBuffers for it's data storage. These buffers can be
@@ -66,30 +67,59 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private readonly numberEncoder = new NumberEncoder();
     private readonly generalPurposeEncoder = new GeneralPurposeEncoder();
 
+    private serializer: Serializable<V> | undefined;
+    private originalOptions: ShareableMapOptions<V>;
+
     /**
      * Construct a new ShareableMap.
-     *
-     * @param expectedSize How many items are expected to be stored in this map? Setting this to a good estimate from
-     * the beginning is important not to trash performance.
-     * @param averageBytesPerValue What's the expected average size of one serialized value that will be stored in this
-     * map?
-     * @param serializer Custom serializer to convert the objects stored in this map as a value to an ArrayBuffer and
-     * vice-versa.
      */
     constructor(
-        expectedSize: number = 1024,
-        averageBytesPerValue: number = 256,
-        private readonly serializer?: Serializable<V>
+        options?: ShareableMapOptions<V>,
     ) {
         super();
-        this.reset(expectedSize, averageBytesPerValue);
+
+        // Define default options
+        const defaultOptions: ShareableMapOptions<V> = {
+            expectedSize: 1024,
+            averageBytesPerValue: 256
+        };
+
+        this.originalOptions = { ...defaultOptions, ...options };
+
+        this.serializer = this.originalOptions?.serializer;
+
+        this.reset(
+            this.originalOptions.expectedSize!,
+            this.originalOptions.averageBytesPerValue!
+        );
+    }
+
+    /**
+     * Creates a new ShareableMap from existing memory buffers. The buffers should come from another ShareableMap
+     * instance created beforehand. These buffers can be retrieved using `toBuffers()` on that ShareableMap.
+     * Note that when the original ShareableMap used a custom serializer, the same type of serializer must also be
+     * provided here.
+     *
+     * @param indexBuffer Index table buffer
+     * @param dataBuffer Data storage buffer
+     * @param serializer Optional serializer for custom value types.
+     * @returns A new ShareableMap instance using the provided memory buffers
+     */
+    public static fromBuffers<K, V>(
+        indexBuffer: WebAssembly.Memory,
+        dataBuffer: WebAssembly.Memory,
+        serializer?: Serializable<V>
+    ): ShareableMap<K, V> {
+        const map = new ShareableMap<K, V>({ averageBytesPerValue: 0, expectedSize: 0, serializer });
+        map.setBuffers(indexBuffer, dataBuffer);
+        return map;
     }
 
     /**
      * Get the internal buffers that represent this map and that can be transferred without cost between threads. Use
      * setBuffers() to rebuild a ShareableMap after the buffers have been transferred.
      */
-    public getBuffers(): WebAssembly.Memory[] {
+    public toBuffers(): WebAssembly.Memory[] {
         return [this.indexMem, this.dataMem];
     }
 
@@ -100,7 +130,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * dataBuffer.
      * @param dataBuffer Portion of memory in which all the data itself is stored.
      */
-    public setBuffers(indexBuffer: WebAssembly.Memory, dataBuffer: WebAssembly.Memory) {
+    protected setBuffers(indexBuffer: WebAssembly.Memory, dataBuffer: WebAssembly.Memory) {
         this.indexMem = indexBuffer;
         this.indexView = new DataView(this.indexMem.buffer);
         this.dataMem = dataBuffer;
@@ -143,8 +173,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
     }
 
-    clear(expectedSize: number = 1024, averageBytesPerValue: number = 256): void {
-        this.reset(expectedSize, averageBytesPerValue);
+    clear(): void {
+        this.reset(this.originalOptions.expectedSize!, this.originalOptions.averageBytesPerValue!);
     }
 
     delete(key: K): boolean {
