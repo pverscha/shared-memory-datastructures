@@ -1,4 +1,4 @@
-# SharedMemoryDatastructures
+# Shared Memory Datastructures
 ## Introduction
 This package is intended to speed up the communication time between different JavaScript threads by exposing data structures that internally use a `SharedArrayBuffer` to store all required information. `SharedArrayBuffers` can be transfered and shared by multiple threads without an extra cost, but can only contain binary data.
 
