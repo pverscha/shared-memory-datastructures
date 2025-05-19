@@ -70,6 +70,15 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
     /**
      * Construct a new ShareableMap.
+     *
+     * This map implementation uses ArrayBuffers internally for data storage, allowing efficient
+     * transfer between threads with zero-copy cost. When SharedArrayBuffer is not supported,
+     * it falls back to regular ArrayBuffers.
+     *
+     * @param options Configuration options for the map:
+     *     - expectedSize: Expected number of elements to be stored (default: 1024)
+     *     - averageBytesPerValue: Expected average size in bytes per value (default: 256)
+     *     - serializer: Optional custom serializer for value types
      */
     constructor(
         options?: ShareableMapOptions<V>,
