@@ -109,14 +109,23 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * provided here.
      *
      * @param state Object containing the index and data buffers
-     * @param serializer Optional serializer for custom value types
+     * @param options Configuration options for the map:
+     *     - expectedSize: Expected number of elements to be stored (default: 1024)
+     *     - averageBytesPerValue: Expected average size in bytes per value (default: 256)
+     *     - serializer: Optional custom serializer for value types
      * @returns A new ShareableMap instance constructed from the provided state
      */
     public static fromTransferableState<K, V>(
         { indexBuffer, dataBuffer }: TransferableState,
-        serializer?: Serializable<V>
+        options?: ShareableMapOptions<V>
     ): ShareableMap<K, V> {
-        const map = new ShareableMap<K, V>({ averageBytesPerValue: 0, expectedSize: 0, serializer });
+        // Define default options
+        const defaultOptions: ShareableMapOptions<V> = {
+            expectedSize: 1024,
+            averageBytesPerValue: 256
+        };
+
+        const map = new ShareableMap<K, V>({ ...defaultOptions, ...options });
         map.setBuffers(indexBuffer, dataBuffer);
         return map;
     }

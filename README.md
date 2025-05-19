@@ -15,6 +15,8 @@ npm install shared-memory-datastructures
 
 ## Datastructures
 ### ShareableMap
+
+
 Partially implements the JavaScript Map interface and tries to adhere to the map principles as good as possible. This map is currently aimed at setting each key, value pair once and reading the afterwards as `delete()` is not supported (and changing a key's value is also not supported).
 
 **Not supported**
