@@ -88,7 +88,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         // Define default options
         const defaultOptions: ShareableMapOptions<V> = {
             expectedSize: 1024,
-            averageBytesPerValue: 256
+            averageBytesPerValue: 256,
+            maxDataSize: 8192
         };
 
         this.originalOptions = { ...defaultOptions, ...options };
@@ -793,7 +794,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     private allocateMemory(initial: number): WebAssembly.Memory {
-        const params = { initial, maximum: 65536} as any;
+        const params = { initial, maximum: this.originalOptions.maxDataSize } as any;
         try {
             params.shared = true;
             return new WebAssembly.Memory(params);
