@@ -68,6 +68,12 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private serializer: Serializable<V> | undefined;
     private originalOptions: ShareableMapOptions<V>;
 
+    private readonly defaultOptions: ShareableMapOptions<V> = {
+        expectedSize: 1024,
+        averageBytesPerValue: 256,
+        maxDataSize: 4096
+    };
+
     /**
      * Construct a new ShareableMap.
      *
@@ -85,14 +91,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     ) {
         super();
 
-        // Define default options
-        const defaultOptions: ShareableMapOptions<V> = {
-            expectedSize: 1024,
-            averageBytesPerValue: 256,
-            maxDataSize: 8192
-        };
-
-        this.originalOptions = { ...defaultOptions, ...options };
+        this.originalOptions = { ...this.defaultOptions, ...options };
 
         this.serializer = this.originalOptions?.serializer;
 
@@ -122,8 +121,9 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     ): ShareableMap<K, V> {
         // Define default options
         const defaultOptions: ShareableMapOptions<V> = {
-            expectedSize: 1024,
-            averageBytesPerValue: 256
+            expectedSize: 0,
+            averageBytesPerValue: 0,
+            maxDataSize: 4096
         };
 
         const map = new ShareableMap<K, V>({ ...defaultOptions, ...options });
@@ -766,6 +766,11 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private reset(expectedSize: number, averageBytesPerValue: number) {
         if (averageBytesPerValue % 4 !== 0) {
             throw new Error("Average bytes per value must be a multiple of 4.");
+        }
+
+        if (expectedSize == 0 && averageBytesPerValue == 0) {
+            // Do not allocate memory, will be performed later...
+            return;
         }
 
         // First 4 bytes are used to store the amount of items in the map.
