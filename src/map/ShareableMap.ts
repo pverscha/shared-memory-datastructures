@@ -42,14 +42,11 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private static readonly INDEX_DATA_ARRAY_SIZE_OFFSET = 12;
     private static readonly INDEX_TOTAL_USED_SPACE_OFFSET = 16;
 
-    // Size of one memory page (in bytes), as defined by the WebAssembly standard
-    private static readonly MEMORY_PAGE_SIZE = 65536;
-
     // Default size of the decoder buffer that's always reused (in bytes)
     private static readonly DECODER_BUFFER_SIZE = 16384;
 
-    private indexMem!: WebAssembly.Memory;
-    private dataMem!: WebAssembly.Memory;
+    private indexMem!: SharedArrayBuffer | ArrayBuffer;
+    private dataMem!: SharedArrayBuffer | ArrayBuffer;
 
     private dataView!: DataView;
     private indexView!: DataView;
@@ -70,8 +67,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
     private readonly defaultOptions: ShareableMapOptions<V> = {
         expectedSize: 1024,
-        averageBytesPerValue: 256,
-        maxDataSize: 4096
+        averageBytesPerValue: 256
     };
 
     /**
@@ -122,8 +118,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         // Define default options
         const defaultOptions: ShareableMapOptions<V> = {
             expectedSize: 0,
-            averageBytesPerValue: 0,
-            maxDataSize: 4096
+            averageBytesPerValue: 0
         };
 
         const map = new ShareableMap<K, V>({ ...defaultOptions, ...options });
@@ -151,11 +146,11 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * dataBuffer.
      * @param dataBuffer Portion of memory in which all the data itself is stored.
      */
-    protected setBuffers(indexBuffer: WebAssembly.Memory, dataBuffer: WebAssembly.Memory) {
+    protected setBuffers(indexBuffer: SharedArrayBuffer | ArrayBuffer, dataBuffer: SharedArrayBuffer | ArrayBuffer) {
         this.indexMem = indexBuffer;
-        this.indexView = new DataView(this.indexMem.buffer);
+        this.indexView = new DataView(this.indexMem);
         this.dataMem = dataBuffer;
-        this.dataView = new DataView(this.dataMem.buffer);
+        this.dataView = new DataView(this.dataMem);
     }
 
     [Symbol.iterator](): MapIterator<[K, V]> {
@@ -306,7 +301,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
                 const exactValueLength = valueEncoder.encode(
                     value,
                     new Uint8Array(
-                        this.dataMem.buffer,
+                        this.dataMem,
                         ShareableMap.DATA_OBJECT_OFFSET + foundPosition + previousKeyLength,
                         maxValueLength
                     )
@@ -341,7 +336,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             const exactKeyLength = this.stringEncoder.encode(
                 keyString,
                 new Uint8Array(
-                    this.dataMem.buffer,
+                    this.dataMem,
                     ShareableMap.DATA_OBJECT_OFFSET + this.freeStart,
                     maxKeyLength
                 )
@@ -350,7 +345,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             const exactValueLength = valueEncoder.encode(
                 value,
                 new Uint8Array(
-                    this.dataMem.buffer,
+                    this.dataMem,
                     ShareableMap.DATA_OBJECT_OFFSET + this.freeStart + exactKeyLength,
                     maxValueLength
                 )
@@ -577,10 +572,20 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * new buffer. This method should be called when not enough free space is available for elements to be stored.
      */
     private doubleDataStorage() {
-        // Double size of the data storage array
-        this.dataMem.grow(Math.round(this.dataMem.buffer.byteLength / ShareableMap.MEMORY_PAGE_SIZE));
-        this.dataSize *= 2;
-        this.dataView = new DataView(this.dataMem.buffer);
+        let newDataMem: SharedArrayBuffer | ArrayBuffer;
+        if (this.dataMem.byteLength > 512 * 1024 * 1024) {
+            // Increase linearly (instead of doubling) with the size of the data array if this is larger than 512MB.
+            newDataMem = this.allocateMemory(this.dataSize + 256 * 1024 * 1024);
+        } else {
+            newDataMem = this.allocateMemory(this.dataMem.byteLength * 2);
+        }
+
+        // Copy the data from the old to the new buffer
+        const newDataArray = new Uint8Array(newDataMem);
+        newDataArray.set(new Uint8Array(this.dataMem));
+        this.dataMem = newDataMem;
+        this.dataSize = newDataMem.byteLength;
+        this.dataView = new DataView(this.dataMem);
     }
 
     /**
@@ -590,8 +595,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      */
     private doubleIndexStorage() {
         const oldBuckets = this.buckets;
-        const newIndex = this.allocateMemory(Math.ceil((ShareableMap.INT_SIZE * (oldBuckets * 2)) / ShareableMap.MEMORY_PAGE_SIZE));
-        const newIndexView = new DataView(newIndex.buffer);
+        const newIndex = this.allocateMemory(ShareableMap.INT_SIZE * oldBuckets * 2);
+        const newIndexView = new DataView(newIndex);
         const newBuckets = (newIndexView.byteLength - ShareableMap.INDEX_TABLE_OFFSET) / ShareableMap.INT_SIZE;
 
         let bucketsInUse: number = 0;
@@ -630,7 +635,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
 
         this.indexMem = newIndex;
-        this.indexView = new DataView(this.indexMem.buffer);
+        this.indexView = new DataView(this.indexMem);
         // The buckets that are currently in use is the only thing that did change for the new index table.
         this.indexView.setUint32(4, bucketsInUse);
     }
@@ -776,37 +781,39 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         // First 4 bytes are used to store the amount of items in the map.
         // Second 4 bytes keep track of how many buckets are currently being used.
         // Third set of 4 bytes is used to track where the free space in the data table starts.
-        // Fourth set of 4 bytes keep tracks of the length of the DataBuffer.
+        // Fourth set of 4 bytes keep tracks of the DataBuffer's length.
         // Fifth set of 4 bytes keeps track of the space that's being used in total (to track the defrag factor).
         // Rest of the index maps buckets onto their starting position in the data array.
         const buckets = Math.ceil(expectedSize / ShareableMap.LOAD_FACTOR)
         const indexSize = 5 * 4 + buckets * ShareableMap.INT_SIZE;
 
-        this.indexMem = this.allocateMemory(Math.ceil(indexSize / ShareableMap.MEMORY_PAGE_SIZE));
-        this.indexView = new DataView(this.indexMem.buffer);
+        this.indexMem = this.allocateMemory(indexSize);
+        this.indexView = new DataView(this.indexMem);
 
         // Free space starts from position 1 in the data array (instead of 0, which we use to indicate the end).
         this.indexView.setUint32(ShareableMap.INDEX_FREE_START_INDEX_OFFSET, ShareableMap.INITIAL_DATA_OFFSET);
 
         // Size must be a multiple of 4
-        const dataSizePages = Math.ceil(averageBytesPerValue * expectedSize / ShareableMap.MEMORY_PAGE_SIZE);
+        const dataSize = averageBytesPerValue * expectedSize;
 
-        this.dataMem = this.allocateMemory(dataSizePages);
-        this.dataView = new DataView(this.dataMem.buffer);
+        this.dataMem = this.allocateMemory(dataSize);
+        this.dataView = new DataView(this.dataMem);
 
-        // Keep track of the size of the data part of the map.
-        this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, dataSizePages * ShareableMap.MEMORY_PAGE_SIZE);
+        // Keep track of the data part size of the map.
+        this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, dataSize);
     }
 
-    private allocateMemory(initial: number): WebAssembly.Memory {
-        const params = { initial, maximum: this.originalOptions.maxDataSize } as any;
+    private allocateMemory(byteSize: number): SharedArrayBuffer | ArrayBuffer {
         try {
-            params.shared = true;
-            return new WebAssembly.Memory(params);
+            return new SharedArrayBuffer(byteSize);
         } catch (err) {
-            // Fallback to non-shared memory
-            console.warn("Shared memory is not supported by this browser. Falling back to non-shared memory.");
-            return new WebAssembly.Memory(params);
+            try {
+                // Fallback to non-shared memory
+                console.warn("Shared memory is not supported by this browser. Falling back to non-shared memory.");
+                return new ArrayBuffer(byteSize);
+            } catch (e) {
+                throw new Error(`Could not allocated memory. Tried to allocate ${byteSize} bytes.`);
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
 export interface TransferableState {
-    indexBuffer: WebAssembly.Memory;
-    dataBuffer: WebAssembly.Memory;
+    indexBuffer: SharedArrayBuffer | ArrayBuffer;
+    dataBuffer: SharedArrayBuffer | ArrayBuffer;
 }

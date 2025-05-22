@@ -23,12 +23,4 @@ export default interface ShareableMapOptions<V> {
      * performance of the ShareableMap.
      */
     serializer?: Serializable<V>;
-
-    /**
-     * Maximum size of the data buffer that's used to store the serialized values in virtual WebAssembly pages. One
-     * WebAssembly memory page is 64KB in size.
-     *
-     * This is a hard limit. If the data buffer is full, the map will throw an error.
-     */
-    maxDataSize?: number;
 };
