@@ -6,7 +6,7 @@ import StringEncoder from "./StringEncoder";
 export {
     GeneralPurposeEncoder,
     NumberEncoder,
-    StringEncoder
+    StringEncoder,
 };
 
 export type { Serializable };

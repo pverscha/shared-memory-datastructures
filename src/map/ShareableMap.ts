@@ -606,10 +606,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             let startPos = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + bucket * 4);
 
             while (startPos !== 0) {
-                // Read key and rehash
-                const key = this.readKeyFromDataObject(startPos);
-
-                const hash: number = fast1a32(key);
+                // Rehash
+                const hash: number = this.readHashFromDataObject(startPos);
                 const newBucket = hash % newBuckets;
 
                 const newBucketContent = newIndexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + newBucket * 4);

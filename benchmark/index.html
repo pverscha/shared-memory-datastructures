@@ -14,7 +14,7 @@
 
         const keyValuePairs = [];
 
-        for (let i = 0; i < 1000000; i++) {
+        for (let i = 0; i < 2000000; i++) {
             keyValuePairs.push([generator(), generator()]);
         }
 
@@ -44,11 +44,14 @@
             console.log(`Getting values took: ${endTime - startTime}ms`);
         }
 
-        console.log("Started benchmarking ShareableMap...");
-        benchmarkMap(new ShareableMap(keyValuePairs.length));
+        console.log("Started benchmarking ShareableMap with normal strings...");
+        const map = new ShareableMap(keyValuePairs.length);
+        benchmarkMap(map);
 
-        console.log("Started benchmarking default Map...");
-        benchmarkMap(new Map());
+        // console.log(`Read key was called ${map.readKeyCalled} times`)
+
+        // console.log("Started benchmarking default Map...");
+        // benchmarkMap(new Map());
     </script>
 </body>
 </html>
