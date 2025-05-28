@@ -120,6 +120,72 @@ describe("ShareableMap", () => {
         expect(typeof map.get("k1")).toEqual("number");
     });
 
+    it("should correctly add keys and remove them", () => {
+        const map = new ShareableMap<string, string>();
+
+        for (const [key, value] of pairs) {
+            map.set(key, value);
+        }
+
+        // Check that the length of the map is correct before deletion
+        expect(map.size).toEqual(uniqueKeysCount);
+
+        // Extract 5000 keys from the pairs and remove these from the map. Also count how many unique keys we've
+        // selected
+        const uniquesRemoved = new Set<string>();
+        for (const [key, value] of pairs.slice(0, 5000)) {
+            map.delete(key);
+            uniquesRemoved.add(key);
+        }
+
+        expect(map.size).toEqual(uniqueKeysCount - uniquesRemoved.size);
+
+        // Check that the removed keys are all gone from the map.
+        for (const removedKey of uniquesRemoved) {
+            expect(map.has(removedKey)).toBeFalsy();
+        }
+    });
+
+    it("should correctly defragment the map if required", () => {
+        const map = new ShareableMap<string, string>();
+
+        // First we add a bunch of values
+        for (const [key, value] of pairs) {
+            map.set(key, value);
+        }
+
+        // Then we remove about 75% of the keys
+        const removedPairs = pairs.slice(0, Math.floor(pairAmount * 0.90));
+        for (const [key, _] of removedPairs) {
+            map.delete(key);
+        }
+
+        // Check that defragmentation has not yet occurred (because it's only performed on setting a value)
+        const transferableState = map.toTransferableState();
+        const dataView = new DataView(transferableState.dataBuffer);
+
+        // Size of data buffer before adding values again
+        const dataBufferSizeBeforeSet = dataView.byteLength;
+
+
+        // Add the removedPairs again, and check that the dataBuffer has not increased in size (which means that
+        // defragmentation must have been triggered at some point).
+        for (const [key, value] of removedPairs) {
+            map.set(key, value);
+        }
+
+        // Size of data buffer after adding values
+        const dataBufferSizeAfterSet = dataView.byteLength;
+
+        // The map should not have grown
+        expect(dataBufferSizeAfterSet).toEqual(dataBufferSizeBeforeSet);
+
+        // Check that all data is still available
+        for (const [key, _]  of pairs) {
+            expect(map.has(key)).toBeTruthy();
+        }
+    });
+
     // it("should work with keys that are objects containing functions", () => {
     //     const map = new ShareableMap<{ firstName: string, lastName: string, testFunction: () => string }, string>();
     //
