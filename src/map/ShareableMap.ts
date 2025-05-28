@@ -21,18 +21,30 @@ export class ShareableMap<K, V> extends Map<K, V> {
     // How many bytes for a data object are reserved for metadata? (e.g. pointer to next block, key length,
     // value length).
     private static readonly DATA_OBJECT_OFFSET = 20;
-    private static readonly INDEX_TABLE_OFFSET = 20;
+    private static readonly INDEX_TABLE_OFFSET = 24;
 
     // Offsets for the different metadata entries that are kept in the index table.
     private static readonly INDEX_SIZE_OFFSET = 0;
     private static readonly INDEX_USED_BUCKETS_OFFSET = 4;
     private static readonly INDEX_FREE_START_INDEX_OFFSET = 8;
-    // Which item in the index array is used to check if the map is locked by other threads?
+    // Which position in the index array is used to check if the map is locked by other threads (=> UInt32)
     private static readonly INDEX_LOCK_OFFSET = 12;
     private static readonly INDEX_TOTAL_USED_SPACE_OFFSET = 16;
+    // Which position in the index array is used to count the amount of held read locks (=> UInt32)
+    private static readonly INDEX_READ_COUNT_OFFSET = 20;
 
     // Default size of the decoder buffer that's always reused (in bytes)
     private static readonly DECODER_BUFFER_SIZE = 16384;
+
+    /**
+     * Lock states for the ShareableMap
+     */
+    private static readonly LOCK_STATE = {
+        UNLOCKED: 0,      // No locks held
+        WRITE_LOCKED: 1,  // Exclusive write lock
+        READ_LOCKED: 2    // One or more read locks
+    };
+
 
     private indexMem!: SharedArrayBuffer | ArrayBuffer;
     private dataMem!: SharedArrayBuffer | ArrayBuffer;
@@ -84,6 +96,8 @@ export class ShareableMap<K, V> extends Map<K, V> {
             this.originalOptions.expectedSize!,
             this.originalOptions.averageBytesPerValue!
         );
+
+        this.initializeLockState();
     }
 
     /**
@@ -179,10 +193,19 @@ export class ShareableMap<K, V> extends Map<K, V> {
     }
 
     clear(): void {
-        this.reset(this.originalOptions.expectedSize!, this.originalOptions.averageBytesPerValue!);
+        this.acquireWriteLock();
+        // TODO: erase data memory and reset index values (but not lock state!)
+        this.releaseWriteLock();
     }
 
     delete(key: K): boolean {
+        this.acquireWriteLock();
+        const deleteResult = this.deleteItem(key);
+        this.releaseWriteLock();
+        return deleteResult
+    }
+
+    private deleteItem(key: K): boolean {
         const stringKey = this.stringifyElement<K>(key);
         const [hash, bucket] = this.computeHashAndBucket(stringKey);
 
@@ -217,6 +240,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
 
         // One element has been removed from the map, thus we need to decrease the size of the map.
         this.decreaseSize();
+
         return true;
     }
 
@@ -225,6 +249,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
     }
 
     get(key: K): V | undefined {
+        this.acquireReadLock();
         let stringKey = this.stringifyElement<K>(key);
         const [hash, bucket] = this.computeHashAndBucket(stringKey);
 
@@ -234,6 +259,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
             hash
         );
 
+        this.releaseReadLock();
         if (returnValue) {
             return returnValue[1];
         }
@@ -242,6 +268,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
     }
 
     has(key: K): boolean {
+        this.acquireReadLock();
         let stringKey = this.stringifyElement<K>(key);
         const [hash, bucket] = this.computeHashAndBucket(stringKey);
 
@@ -252,10 +279,12 @@ export class ShareableMap<K, V> extends Map<K, V> {
             false
         );
 
+        this.releaseReadLock();
         return returnValue !== undefined;
     }
 
     set(key: K, value: V): this {
+        this.acquireWriteLock(2);
         const keyString = this.stringifyElement<K>(key);
         const maxKeyLength = this.stringEncoder.maximumLength(keyString);
 
@@ -284,7 +313,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
             const previousValueLength = this.dataView.getUint32(startPos + 8);
 
             if (valueEncoder.maximumLength(value) > previousValueLength) {
-                this.delete(key);
+                this.deleteItem(key);
             } else {
                 needsToBeStored = false;
                 const exactValueLength = valueEncoder.encode(
@@ -373,12 +402,16 @@ export class ShareableMap<K, V> extends Map<K, V> {
             }
         }
 
+        this.releaseWriteLock();
         return this;
     }
 
     get size() {
+        this.acquireReadLock();
         // Size is being stored in the first 4 bytes of the index table
-        return this.indexView.getUint32(ShareableMap.INDEX_SIZE_OFFSET);
+        const value = this.indexView.getUint32(ShareableMap.INDEX_SIZE_OFFSET);
+        this.releaseReadLock();
+        return value;
     }
 
     /**
@@ -426,11 +459,11 @@ export class ShareableMap<K, V> extends Map<K, V> {
      * Increase the size counter by one. This counter keeps track of how many items are currently stored in this map.
      */
     private increaseSize() {
-        this.indexView.setUint32(ShareableMap.INDEX_SIZE_OFFSET, this.size + 1);
+        this.indexView.setUint32(ShareableMap.INDEX_SIZE_OFFSET, this.indexView.getUint32(ShareableMap.INDEX_SIZE_OFFSET) + 1);
     }
 
     private decreaseSize() {
-        this.indexView.setUint32(ShareableMap.INDEX_SIZE_OFFSET, this.size - 1);
+        this.indexView.setUint32(ShareableMap.INDEX_SIZE_OFFSET, this.indexView.getUint32(ShareableMap.INDEX_SIZE_OFFSET) - 1);
     }
 
     private get spaceUsedInDataPartition(): number {
@@ -770,6 +803,152 @@ export class ShareableMap<K, V> extends Map<K, V> {
             } catch (e) {
                 throw new Error(`Could not allocated memory. Tried to allocate ${byteSize} bytes.`);
             }
+        }
+    }
+
+    /**
+     * Acquires a read lock on the map. Multiple readers can hold read locks simultaneously,
+     * but no writers can access the map while any read locks are held.
+     *
+     * @param timeout Optional timeout in milliseconds. If not provided, will wait indefinitely.
+     * @returns true if the lock was acquired, false if it timed out
+     */
+    private acquireReadLock(timeout: number = 500): boolean {
+        if (!(this.indexMem instanceof SharedArrayBuffer)) {
+            // Locking only works with SharedArrayBuffer
+            return true;
+        }
+
+        const int32Array = new Int32Array(this.indexMem);
+
+        // Wait until there are no write locks
+        const startTime = Date.now();
+        while (true) {
+            // Check if there's a write lock
+            const currentState = Atomics.load(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4);
+
+            if (currentState !== ShareableMap.LOCK_STATE.WRITE_LOCKED) {
+                // No write lock, try to update the state and increment read count
+                const readCount = Atomics.add(int32Array, ShareableMap.INDEX_READ_COUNT_OFFSET / 4, 1) + 1;
+
+                // If this is the first read lock, update the state
+                if (readCount === 1) {
+                    Atomics.store(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4, ShareableMap.LOCK_STATE.READ_LOCKED);
+                }
+
+                return true;
+            }
+
+            // If we have a timeout and it's expired, return false
+            if (timeout !== undefined && (Date.now() - startTime) >= timeout) {
+                throw new Error("ShareableMap: timeout expired while waiting for read lock.");
+            }
+
+            // Wait for a notification that the write lock might be released
+            // We use "not-equal" because we want to wake up when the state changes from WRITE_LOCKED
+            Atomics.wait(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4,
+                ShareableMap.LOCK_STATE.WRITE_LOCKED,
+                timeout === undefined ? Infinity : timeout - (Date.now() - startTime));
+        }
+    }
+
+    /**
+     * Releases a previously acquired read lock.
+     */
+    public releaseReadLock(): void {
+        if (!(this.indexMem instanceof SharedArrayBuffer)) {
+            return;
+        }
+
+        const int32Array = new Int32Array(this.indexMem);
+
+        // Decrement the read count
+        const readCount = Atomics.sub(int32Array, ShareableMap.INDEX_READ_COUNT_OFFSET / 4, 1) - 1;
+
+        // If this was the last read lock, update the state and notify waiters
+        if (readCount === 0) {
+            Atomics.store(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4, ShareableMap.LOCK_STATE.UNLOCKED);
+            // Notify all waiters that the state has changed
+            Atomics.notify(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4, Infinity);
+        }
+    }
+
+    /**
+     * Acquires an exclusive write lock on the map. No other readers or writers can access
+     * the map while a write lock is held.
+     *
+     * @param timeout Optional timeout in milliseconds. If not provided, will wait indefinitely.
+     * @returns true if the lock was acquired, false if it timed out
+     */
+    public acquireWriteLock(timeout: number = 500): boolean {
+        if (!(this.indexMem instanceof SharedArrayBuffer)) {
+            // Locking only works with SharedArrayBuffer
+            return true;
+        }
+
+        const int32Array = new Int32Array(this.indexMem);
+
+        const startTime = Date.now();
+        while (true) {
+            // Check if the map is currently unlocked
+            const currentState = Atomics.load(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4);
+
+            if (currentState === ShareableMap.LOCK_STATE.UNLOCKED) {
+                // Try to atomically change state from UNLOCKED to WRITE_LOCKED
+                const exchangedValue = Atomics.compareExchange(
+                    int32Array,
+                    ShareableMap.INDEX_LOCK_OFFSET / 4,
+                    ShareableMap.LOCK_STATE.UNLOCKED,
+                    ShareableMap.LOCK_STATE.WRITE_LOCKED
+                );
+
+                // If exchangedValue is UNLOCKED, we got the lock
+                if (exchangedValue === ShareableMap.LOCK_STATE.UNLOCKED) {
+                    return true;
+                }
+            }
+
+            // If we have a timeout and it's expired, return false
+            if (timeout !== undefined && (Date.now() - startTime) >= timeout) {
+                throw new Error("ShareableMap: timeout expired while waiting for write lock.");
+            }
+
+            // Wait for a notification that the lock state has changed
+            Atomics.wait(
+                int32Array,
+                ShareableMap.INDEX_LOCK_OFFSET / 4,
+                currentState,
+                timeout === undefined ? Infinity : timeout - (Date.now() - startTime)
+            );
+        }
+    }
+
+    /**
+     * Releases a previously acquired write lock.
+     */
+    public releaseWriteLock(): void {
+        if (!(this.indexMem instanceof SharedArrayBuffer)) {
+            return;
+        }
+
+        const int32Array = new Int32Array(this.indexMem);
+
+        // Set the state to UNLOCKED
+        Atomics.store(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4, ShareableMap.LOCK_STATE.UNLOCKED);
+
+        // Notify all waiters that the lock has been released
+        Atomics.notify(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4, Infinity);
+    }
+
+    /**
+     * Initialize lock state in the reset method
+     * Add this to your reset() method
+     */
+    private initializeLockState(): void {
+        if (this.indexMem instanceof SharedArrayBuffer) {
+            const int32Array = new Int32Array(this.indexMem);
+            Atomics.store(int32Array, ShareableMap.INDEX_LOCK_OFFSET / 4, ShareableMap.LOCK_STATE.UNLOCKED);
+            Atomics.store(int32Array, ShareableMap.INDEX_READ_COUNT_OFFSET / 4, 0);
         }
     }
 }

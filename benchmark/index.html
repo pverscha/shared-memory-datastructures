@@ -6,7 +6,8 @@
 </head>
 <body>
     <script type="module">
-        import {ShareableMap} from "./../dist/shared-memory-datastructures.js";
+        // In development mode, import directly from the source
+        import {ShareableMap} from "/src/index.ts";
 
         function generator() {
             return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
