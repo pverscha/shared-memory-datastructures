@@ -161,12 +161,11 @@ describe("ShareableMap", () => {
         }
 
         // Check that defragmentation has not yet occurred (because it's only performed on setting a value)
-        const transferableState = map.toTransferableState();
-        const dataView = new DataView(transferableState.dataBuffer);
+        const transferableStateBefore = map.toTransferableState();
+        const dataViewBefore = new DataView(transferableStateBefore.dataBuffer);
 
         // Size of data buffer before adding values again
-        const dataBufferSizeBeforeSet = dataView.byteLength;
-
+        const dataBufferSizeBeforeSet = dataViewBefore.byteLength;
 
         // Add the removedPairs again, and check that the dataBuffer has not increased in size (which means that
         // defragmentation must have been triggered at some point).
@@ -174,8 +173,11 @@ describe("ShareableMap", () => {
             map.set(key, value);
         }
 
+        const transferableStateAfter = map.toTransferableState();
+        const dataViewAfter = new DataView(transferableStateAfter.dataBuffer);
+
         // Size of data buffer after adding values
-        const dataBufferSizeAfterSet = dataView.byteLength;
+        const dataBufferSizeAfterSet = dataViewAfter.byteLength;
 
         // The map should not have grown
         expect(dataBufferSizeAfterSet).toEqual(dataBufferSizeBeforeSet);
@@ -185,25 +187,6 @@ describe("ShareableMap", () => {
             expect(map.has(key)).toBeTruthy();
         }
     });
-
-    // it("should work with keys that are objects containing functions", () => {
-    //     const map = new ShareableMap<{ firstName: string, lastName: string, testFunction: () => string }, string>();
-    //
-    //     const key1 = {
-    //         firstName: "John",
-    //         lastName: "Doe",
-    //         testFunction: () => {
-    //             return "something";
-    //         }
-    //     }
-    //
-    //     map.set(key1, "test");
-    //
-    //
-    //     expect([...map.keys()]).toEqual([key1]);
-    //     expect(map.get(key1)).toEqual("test");
-    //     expect([...map.keys()][0].testFunction()).toEqual("something");
-    // })
 });
 
 function generateRandomString() {
