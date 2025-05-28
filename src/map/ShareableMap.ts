@@ -6,19 +6,7 @@ import GeneralPurposeEncoder from "./../encoding/GeneralPurposeEncoder";
 import ShareableMapOptions from "./ShareableMapOptions";
 import {TransferableState} from "./TransferableState";
 
-/**
- * Special implementation of the Map API that internally uses ArrayBuffers for it's data storage. These buffers can be
- * easily transferred between threads with a zero-copy cost, which allows to gain a much higher communication speed
- * between threads. You need to call `toTransferableState()` and `fromTransferableState()` and manually transfer the
- * buffers for this map between threads to use these benefits.
- *
- * NOTE: When no support for SharedArrayBuffers is available, this map will automatically fall back to regular
- * ArrayBuffers, which can also be transferred between threads (but cannot be used by multiple threads at the same
- * time).
- *
- * @author Pieter Verschaffelt
- */
-export default class ShareableMap<K, V> extends Map<K, V> {
+export class ShareableMap<K, V> extends Map<K, V> {
     // The default load factor to which this map should adhere
     private static readonly LOAD_FACTOR = 0.75;
     // Minimum ratio of (used space / total space) in the data table. This ratio indicates what percentage of the
@@ -39,7 +27,8 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     private static readonly INDEX_SIZE_OFFSET = 0;
     private static readonly INDEX_USED_BUCKETS_OFFSET = 4;
     private static readonly INDEX_FREE_START_INDEX_OFFSET = 8;
-    private static readonly INDEX_DATA_ARRAY_SIZE_OFFSET = 12;
+    // Which item in the index array is used to check if the map is locked by other threads?
+    private static readonly INDEX_LOCK_OFFSET = 12;
     private static readonly INDEX_TOTAL_USED_SPACE_OFFSET = 16;
 
     // Default size of the decoder buffer that's always reused (in bytes)
@@ -87,7 +76,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     ) {
         super();
 
-        this.originalOptions = { ...this.defaultOptions, ...options };
+        this.originalOptions = {...this.defaultOptions, ...options};
 
         this.serializer = this.originalOptions?.serializer;
 
@@ -112,7 +101,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * @returns A new ShareableMap instance constructed from the provided state
      */
     public static fromTransferableState<K, V>(
-        { indexBuffer, dataBuffer }: TransferableState,
+        {indexBuffer, dataBuffer}: TransferableState,
         options?: ShareableMapOptions<V>
     ): ShareableMap<K, V> {
         // Define default options
@@ -121,7 +110,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             averageBytesPerValue: 0
         };
 
-        const map = new ShareableMap<K, V>({ ...defaultOptions, ...options });
+        const map = new ShareableMap<K, V>({...defaultOptions, ...options});
         map.setBuffers(indexBuffer, dataBuffer);
         return map;
     }
@@ -157,7 +146,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         return this.entries();
     }
 
-    *entries(): MapIterator<[K, V]> {
+    * entries(): MapIterator<[K, V]> {
         for (let i = 0; i < this.buckets; i++) {
             let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * ShareableMap.INT_SIZE);
             while (dataPointer !== 0) {
@@ -169,7 +158,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
     }
 
-    *keys(): MapIterator<K> {
+    * keys(): MapIterator<K> {
         for (let i = 0; i < this.buckets; i++) {
             let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * ShareableMap.INT_SIZE);
             while (dataPointer !== 0) {
@@ -179,7 +168,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         }
     }
 
-    *values(): MapIterator<V> {
+    * values(): MapIterator<V> {
         for (let i = 0; i < this.buckets; i++) {
             let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * 4);
             while (dataPointer !== 0) {
@@ -317,14 +306,14 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
         if (needsToBeStored) {
             // Determine if the data storage needs to be resized.
-            if (maxKeyLength + maxValueLength + this.freeStart + ShareableMap.DATA_OBJECT_OFFSET > this.dataSize) {
+            if (maxKeyLength + maxValueLength + this.freeStart + ShareableMap.DATA_OBJECT_OFFSET > this.dataView.byteLength) {
                 // We don't have enough space left at the end of the data array. We should now consider if we should just
                 // perform a defragmentation of the data array, or if we need to double the size of the array.
-                const defragRatio = this.spaceUsedInDataPartition / this.totalDataArraySize;
+                const defragRatio = this.spaceUsedInDataPartition / this.dataView.byteLength;
 
                 if (
                     defragRatio < ShareableMap.MIN_DEFRAG_FACTOR &&
-                    this.spaceUsedInDataPartition + maxKeyLength + maxValueLength + ShareableMap.DATA_OBJECT_OFFSET < this.dataSize
+                    this.spaceUsedInDataPartition + maxKeyLength + maxValueLength + ShareableMap.DATA_OBJECT_OFFSET < this.dataView.byteLength
                 ) {
                     this.defragment();
                 } else {
@@ -434,22 +423,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
     }
 
     /**
-     * @return Total current length of the data array in bytes.
-     */
-    private get dataSize() {
-        return this.indexView.getUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET);
-    }
-
-    /**
-     * Update the total length of the data array.
-     *
-     * @param size New length value, in bytes.
-     */
-    private set dataSize(size) {
-        this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, size);
-    }
-
-    /**
      * Increase the size counter by one. This counter keeps track of how many items are currently stored in this map.
      */
     private increaseSize() {
@@ -472,17 +445,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      */
     private set spaceUsedInDataPartition(size: number) {
         this.indexView.setUint32(ShareableMap.INDEX_TOTAL_USED_SPACE_OFFSET, size);
-    }
-
-    /**
-     * Returns the total amount of bytes that are available in the data space.
-     */
-    private get totalDataArraySize(): number {
-        return this.indexView.getUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET);
-    }
-
-    private set totalDataArraySize(size: number) {
-        this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, size);
     }
 
     /**
@@ -524,7 +486,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
      * copying and moving data around and releasing this block again from memory.
      */
     private defragment() {
-        const newData: ArrayBuffer = new ArrayBuffer(this.dataSize);
+        const newData: ArrayBuffer = new ArrayBuffer(this.dataView.byteLength);
         const newView = new DataView(newData);
 
         let newOffset = ShareableMap.INITIAL_DATA_OFFSET;
@@ -537,7 +499,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
             while (dataPointer !== 0) {
                 const keyLength = this.dataView.getUint32(dataPointer + 4);
-                const valueLength = this.dataView.getUint32(dataPointer + 8 );
+                const valueLength = this.dataView.getUint32(dataPointer + 8);
 
                 const totalLength = keyLength + valueLength + ShareableMap.DATA_OBJECT_OFFSET;
 
@@ -561,7 +523,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
             }
         }
 
-        for (let i = 0; i < this.dataSize; i += 4) {
+        for (let i = 0; i < this.dataView.byteLength; i += 4) {
             this.dataView.setUint32(i, newView.getUint32(i));
         }
         this.freeStart = newOffset;
@@ -575,7 +537,7 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         let newDataMem: SharedArrayBuffer | ArrayBuffer;
         if (this.dataMem.byteLength > 512 * 1024 * 1024) {
             // Increase linearly (instead of doubling) with the size of the data array if this is larger than 512MB.
-            newDataMem = this.allocateMemory(this.dataSize + 256 * 1024 * 1024);
+            newDataMem = this.allocateMemory(this.dataView.byteLength + 256 * 1024 * 1024);
         } else {
             newDataMem = this.allocateMemory(this.dataMem.byteLength * 2);
         }
@@ -584,7 +546,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
         const newDataArray = new Uint8Array(newDataMem);
         newDataArray.set(new Uint8Array(this.dataMem));
         this.dataMem = newDataMem;
-        this.dataSize = newDataMem.byteLength;
         this.dataView = new DataView(this.dataMem);
     }
 
@@ -796,9 +757,6 @@ export default class ShareableMap<K, V> extends Map<K, V> {
 
         this.dataMem = this.allocateMemory(dataSize);
         this.dataView = new DataView(this.dataMem);
-
-        // Keep track of the data part size of the map.
-        this.indexView.setUint32(ShareableMap.INDEX_DATA_ARRAY_SIZE_OFFSET, dataSize);
     }
 
     private allocateMemory(byteSize: number): SharedArrayBuffer | ArrayBuffer {

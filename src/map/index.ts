@@ -1,4 +1,4 @@
-import ShareableMap from "./ShareableMap";
+import {ShareableMap} from "./ShareableMap";
 import ShareableMapOptions from "./ShareableMapOptions";
 import {TransferableState} from "./TransferableState";
 

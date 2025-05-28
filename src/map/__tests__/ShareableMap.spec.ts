@@ -1,4 +1,4 @@
-import ShareableMap from "../ShareableMap";
+import {ShareableMap} from "../ShareableMap";
 
 describe("ShareableMap", () => {
     // How many key, value pairs will be generated? Retrieve them again later to check whether the corresponding values
