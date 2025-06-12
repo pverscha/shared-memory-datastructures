@@ -3,7 +3,7 @@ import {Serializable} from "../encoding";
 import StringEncoder from "../encoding/StringEncoder";
 import NumberEncoder from "../encoding/NumberEncoder";
 import GeneralPurposeEncoder from "../encoding/GeneralPurposeEncoder";
-import {TransferableState} from "../map";
+import {TransferableState} from "../TransferableState";
 
 export class ShareableArray<T> {
     // One UInt32 per object that's stored in this array. This size here is expected to be in bytes (so 4 * initial
