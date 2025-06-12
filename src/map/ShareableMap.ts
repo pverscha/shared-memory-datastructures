@@ -6,7 +6,7 @@ import GeneralPurposeEncoder from "./../encoding/GeneralPurposeEncoder";
 import ShareableMapOptions from "./ShareableMapOptions";
 import {TransferableState} from "./TransferableState";
 
-export class ShareableMap<K, V> extends Map<K, V> {
+export class ShareableMap<K, V> {
     // The default load factor to which this map should adhere
     private static readonly LOAD_FACTOR = 0.75;
     // Minimum ratio of (used space / total space) in the data table. This ratio indicates what percentage of the
@@ -49,8 +49,8 @@ export class ShareableMap<K, V> extends Map<K, V> {
     private indexMem!: SharedArrayBuffer | ArrayBuffer;
     private dataMem!: SharedArrayBuffer | ArrayBuffer;
 
-    private dataView!: DataView;
     private indexView!: DataView;
+    private dataView!: DataView;
 
     // This buffer can be reused to decode the keys of each pair in the map (and avoids us having to reallocate a new
     // block of memory for each `get` or `set` operation).
@@ -86,8 +86,6 @@ export class ShareableMap<K, V> extends Map<K, V> {
     constructor(
         options?: ShareableMapOptions<V>,
     ) {
-        super();
-
         this.originalOptions = {...this.defaultOptions, ...options};
 
         this.serializer = this.originalOptions?.serializer;
@@ -115,9 +113,13 @@ export class ShareableMap<K, V> extends Map<K, V> {
      * @returns A new ShareableMap instance constructed from the provided state
      */
     public static fromTransferableState<K, V>(
-        {indexBuffer, dataBuffer}: TransferableState,
+        {indexBuffer, dataBuffer, dataType}: TransferableState,
         options?: ShareableMapOptions<V>
     ): ShareableMap<K, V> {
+        if (dataType !== "map") {
+            throw new TypeError("Invalid data type! Trying to revive map from non-map state.");
+        }
+
         // Define default options
         const defaultOptions: ShareableMapOptions<V> = {
             expectedSize: 0,
@@ -138,7 +140,8 @@ export class ShareableMap<K, V> extends Map<K, V> {
     public toTransferableState(): TransferableState {
         return {
             indexBuffer: this.indexMem,
-            dataBuffer: this.dataMem
+            dataBuffer: this.dataMem,
+            dataType: "map"
         };
     }
 
@@ -194,7 +197,18 @@ export class ShareableMap<K, V> extends Map<K, V> {
 
     clear(): void {
         this.acquireWriteLock();
-        // TODO: erase data memory and reset index values (but not lock state!)
+        // Reset the index buffer. We do not need to erase the data buffer since it will simply be marked as "free space"
+        // by the index (and will be overwritten eventually anyways).
+        for (let i = ShareableMap.INDEX_TABLE_OFFSET; i < this.indexView.byteLength; i += ShareableMap.INT_SIZE) {
+            this.indexView.setUint32(i, 0);
+        }
+
+        // Also reset the settings that are stored in the index table
+        this.indexView.setUint32(ShareableMap.INDEX_USED_BUCKETS_OFFSET, 0);
+        this.indexView.setUint32(ShareableMap.INDEX_SIZE_OFFSET, 0);
+        this.indexView.setUint32(ShareableMap.INDEX_TOTAL_USED_SPACE_OFFSET, 0);
+        this.indexView.setUint32(ShareableMap.INDEX_FREE_START_INDEX_OFFSET, 0);
+
         this.releaseWriteLock();
     }
 
@@ -244,8 +258,21 @@ export class ShareableMap<K, V> extends Map<K, V> {
         return true;
     }
 
-    forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void {
-        super.forEach(callbackfn, thisArg);
+    forEach(callbackfn: (value: V, key: K, map: ShareableMap<K, V>) => void, thisArg?: any): void {
+        this.acquireReadLock();
+
+        const boundCallback = thisArg !== undefined ? callbackfn.bind(thisArg) : callbackfn;
+
+        for (let i = 0; i < this.buckets; i++) {
+            let dataPointer = this.indexView.getUint32(ShareableMap.INDEX_TABLE_OFFSET + i * ShareableMap.INT_SIZE);
+            while (dataPointer !== 0) {
+                const key = this.readTypedKeyFromDataObject(dataPointer);
+                const value = this.readValueFromDataObject(dataPointer);
+                boundCallback(value, key, this);
+                dataPointer = this.dataView.getUint32(dataPointer);
+            }
+        }
+        this.releaseReadLock();
     }
 
     get(key: K): V | undefined {
@@ -284,7 +311,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
     }
 
     set(key: K, value: V): this {
-        this.acquireWriteLock(2);
+        this.acquireWriteLock();
         const keyString = this.stringifyElement<K>(key);
         const maxKeyLength = this.stringEncoder.maximumLength(keyString);
 
@@ -744,6 +771,7 @@ export class ShareableMap<K, V> extends Map<K, V> {
 
         const encoder = this.getEncoderById(this.dataView.getUint16(startPos + 14));
 
+        // Copy from shared memory to a temporary private buffer (since we cannot directly decode from shared memory)
         const sourceView = new Uint8Array(this.dataView.buffer, startPos + ShareableMap.DATA_OBJECT_OFFSET + keyLength, valueLength);
 
         const targetView = new Uint8Array(this.getFittingDecoderBuffer(valueLength), 0, valueLength);
