@@ -4,7 +4,7 @@ import StringEncoder from "./../encoding/StringEncoder";
 import NumberEncoder from "./../encoding/NumberEncoder";
 import GeneralPurposeEncoder from "./../encoding/GeneralPurposeEncoder";
 import ShareableMapOptions from "./ShareableMapOptions";
-import {TransferableState} from "./TransferableState";
+import {TransferableState} from "../TransferableState";
 
 export class ShareableMap<K, V> {
     // The default load factor to which this map should adhere
