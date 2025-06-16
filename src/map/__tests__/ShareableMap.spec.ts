@@ -120,6 +120,66 @@ describe("ShareableMap", () => {
         expect(typeof map.get("k1")).toEqual("number");
     });
 
+    it("should clear all entries from the map", () => {
+        const map = new ShareableMap<string, string>();
+        map.set("key1", "value1");
+        map.set("key2", "value2");
+
+        map.clear();
+
+        expect(map.size).toBe(0);
+        expect(map.get("key1")).toBeUndefined();
+        expect(map.get("key2")).toBeUndefined();
+    });
+
+    it("should delete specific entries from the map", () => {
+        const map = new ShareableMap<string, string>();
+        map.set("key1", "value1");
+        map.set("key2", "value2");
+
+        expect(map.delete("key1")).toBeTruthy();
+        expect(map.delete("nonexistent")).toBeFalsy();
+
+        expect(map.size).toBe(1);
+        expect(map.get("key1")).toBeUndefined();
+        expect(map.get("key2")).toBe("value2");
+    });
+
+    it("should iterate over all entries using forEach", () => {
+        const map = new ShareableMap<string, number>();
+        const entries: [string, number][] = [
+            ["a", 1],
+            ["b", 2],
+            ["c", 3]
+        ];
+
+        entries.forEach(([key, value]) => map.set(key, value));
+
+        const result: [string, number][] = [];
+        map.forEach((value, key) => {
+            result.push([key, value]);
+        });
+
+        expect(result.toSorted()).toEqual(entries.toSorted());
+    });
+
+    it("should handle forEach on empty map", () => {
+        const map = new ShareableMap<string, number>();
+        let iterationCount = 0;
+
+        map.forEach(() => {
+            iterationCount++;
+        });
+
+        expect(iterationCount).toBe(0);
+    });
+
+    it("should return correct size for empty map", () => {
+        const map = new ShareableMap<string, string>();
+        expect(map.size).toBe(0);
+    });
+
+
     // it("should work with keys that are objects containing functions", () => {
     //     const map = new ShareableMap<{ firstName: string, lastName: string, testFunction: () => string }, string>();
     //
