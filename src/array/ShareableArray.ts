@@ -12,6 +12,10 @@ export class ShareableArray<T> {
     // Initial size of the data portion of the array. Is also expected to be reported in bytes.
     private static readonly DEFAULT_DATA_SIZE = 2048;
 
+    // Minimum ratio of (used space / total space) in the data table. This ratio indicates what percentage of the
+    // total space should be wasted, before we start to defragment the data table.
+    private static readonly MIN_DEFRAG_FACTOR = 0.5;
+
     // Where do we keep the length of the array?
     private static readonly INDEX_SIZE_OFFSET = 0;
     // Where does the next free portion of space start in the data array?
@@ -294,7 +298,7 @@ export class ShareableArray<T> {
     push(...items: (T | undefined)[]): number {
         let currentIdx = this.length;
         for (const item of items) {
-            this.addItem(currentIdx, item);
+            this.addOrSetItem(currentIdx, item);
             currentIdx++;
         }
 
@@ -327,10 +331,7 @@ export class ShareableArray<T> {
 
         // Iterate through the array, applying the callback function
         for (let i = startIndex; i < length; i++) {
-            // Only call the callback for indexes that exist in the array
-            if (i in this) {
-                accumulator = callbackfn(accumulator, this.at(i), i, this);
-            }
+            accumulator = callbackfn(accumulator, this.at(i), i, this);
         }
 
         return accumulator;
@@ -362,21 +363,22 @@ export class ShareableArray<T> {
 
         // Iterate through the array from right to left, applying the callback function
         for (let i = startIndex; i >= 0; i--) {
-            // Only call the callback for indexes that exist in the array
-            if (i in this) {
-                accumulator = callbackfn(accumulator, this.at(i), i, this);
-            }
+            accumulator = callbackfn(accumulator, this.at(i), i, this);
         }
 
         return accumulator;
     }
 
     reverse(): ShareableArray<T> {
-        const reversed = new ShareableArray(this.originalOptions);
-        for (let i = this.length - 1; i >= 0; i--) {
-            reversed.push(this.at(i)!)
+        // For performance reasons, we only have to reverse the items in the index array
+        for (let left = 0, right = this.length - 1; left < right; left++, right--) {
+            const temp = this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * left);
+            this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * left, this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * right));
+            this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * right, temp);
         }
-        return reversed;
+
+        // Reverse works in-place and should return a reference to itself when it's done.
+        return this;
     }
 
     shift(): T | undefined {
@@ -454,9 +456,7 @@ export class ShareableArray<T> {
 
         // Update the original array with the sorted values
         for (let i = 0; i < tempArray.length; i++) {
-            // Delete the original item and add the sorted item
-            this.deleteItem(i);
-            this.addItem(i, tempArray[i]);
+            this.addOrSetItem(i, tempArray[i]);
         }
 
         return this;
@@ -544,6 +544,10 @@ export class ShareableArray<T> {
         }
     }
 
+    set(index: number, value: T | undefined): void {
+        this.addOrSetItem(index, value);
+    }
+
     at(index: number): T | undefined {
         return this.readItem(index);
     }
@@ -555,69 +559,187 @@ export class ShareableArray<T> {
         }
     }
 
-    // fill(value: T, start?: number, end?: number): this {
-    // }
-    //
-    // find<S extends T>(predicate: { (value: T, index: number, obj: T[]): boolean }, thisArg?: any): S | undefined;
-    // find(predicate: { (value: T, index: number, obj: T[]): unknown }, thisArg?: any): T | undefined;
-    // find(predicate: { (value: T, index: number, obj: T[]): boolean } | {
-    //     (value: T, index: number, obj: T[]): unknown
-    // }, thisArg?: any): any {
-    // }
-    //
-    // findIndex(predicate: { (value: T, index: number, obj: T[]): unknown }, thisArg?: any): number {
-    //     return 0;
-    // }
-    //
-    // findLast<S extends T>(predicate: { (value: T, index: number, array: T[]): boolean }, thisArg?: any): S | undefined;
-    // findLast(predicate: { (value: T, index: number, array: T[]): unknown }, thisArg?: any): T | undefined;
-    // findLast(predicate: { (value: T, index: number, array: T[]): boolean } | {
-    //     (value: T, index: number, array: T[]): unknown
-    // }, thisArg?: any): any {
-    // }
-    //
-    // findLastIndex(predicate: { (value: T, index: number, array: T[]): unknown }, thisArg?: any): number {
-    //     return 0;
-    // }
-    //
-    // flat<A, D = 1 extends number>(depth?: D): any {
-    // }
-    //
-    // flatMap<U, This = undefined>(callback: {
-    //     (value: T, index: number, array: T[]): (U | readonly U[])
-    // }, thisArg?: This): U[] {
-    //     return undefined;
-    // }
-    //
-    // includes(searchElement: T, fromIndex?: number): boolean {
-    //     return false;
-    // }
-    //
-    // keys(): ArrayIterator<number> {
-    //     return undefined;
-    // }
-    //
-    // toReversed(): T[] {
-    //     return undefined;
-    // }
-    //
-    // toSorted(compareFn?: { (a: T, b: T): number }): T[] {
-    //     return undefined;
-    // }
-    //
-    // toSpliced(start: number, deleteCount: number, ...items: T[]): T[];
-    // toSpliced(start: number, deleteCount?: number): T[];
-    // toSpliced(start: number, deleteCount?: number, ...items: T[]): T[] {
-    //     return undefined;
-    // }
-    //
-    // values(): ArrayIterator<T> {
-    //     return undefined;
-    // }
-    //
-    // with(index: number, value: T): T[] {
-    //     return undefined;
-    // }
+    fill(value: T, start?: number, end?: number): this {
+        const size = this.length;
+        let actualStart;
+        if (start === undefined) {
+            actualStart = 0;
+        } else if (start < 0) {
+            actualStart = Math.max(size + start, 0);
+        } else {
+            actualStart = Math.min(start, size);
+        }
+
+        let actualEnd;
+        if (end === undefined) {
+            actualEnd = size;
+        } else if (end < 0) {
+            actualEnd = Math.max(size + end, 0);
+        } else {
+            actualEnd = Math.min(end, size);
+        }
+
+        for (let i = actualStart; i < actualEnd; i++) {
+            this.addOrSetItem(i, value);
+        }
+    
+        return this;
+    }
+
+    find<S extends T>(predicate: { (value: T, index: number, obj: T[]): boolean }, thisArg?: any): S | undefined;
+    find(predicate: { (value: T, index: number, obj: T[]): unknown }, thisArg?: any): T | undefined;
+    find(predicate: { (value: T, index: number, obj: T[]): boolean } | {
+        (value: T, index: number, obj: T[]): unknown
+    }, thisArg?: any): any {
+        // Bind the predicate function to thisArg if provided
+        const boundPredicate = thisArg !== undefined
+            ? predicate.bind(thisArg)
+            : predicate;
+
+        // Test each element against the predicate
+        for (let i = 0; i < this.length; i++) {
+            const value = this.at(i);
+            if (value !== undefined && boundPredicate(value, i, Array.from(this))) {
+                return value;
+            }
+        }
+        
+        return undefined;
+    }
+
+    findIndex(predicate: { (value: T, index: number, obj: T[]): unknown }, thisArg?: any): number {
+        // Bind the predicate function to thisArg if provided
+        const boundPredicate = thisArg !== undefined
+            ? predicate.bind(thisArg)
+            : predicate;
+
+        // Test each element against the predicate
+        for (let i = 0; i < this.length; i++) {
+            const value = this.at(i);
+            if (value !== undefined && boundPredicate(value, i, Array.from(this))) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    findLast<S extends T>(predicate: { (value: T, index: number, array: T[]): boolean }, thisArg?: any): S | undefined;
+    findLast(predicate: { (value: T, index: number, array: T[]): unknown }, thisArg?: any): T | undefined;
+    findLast(predicate: { (value: T, index: number, array: T[]): boolean } | {
+        (value: T, index: number, array: T[]): unknown
+    }, thisArg?: any): any {
+        // Bind the predicate function to thisArg if provided
+        const boundPredicate = thisArg !== undefined
+            ? predicate.bind(thisArg)
+            : predicate;
+
+        // Test each element against the predicate
+        for (let i = this.length; i >= 0; i--) {
+            const value = this.at(i);
+            if (value !== undefined && boundPredicate(value, i, Array.from(this))) {
+                return value;
+            }
+        }
+
+        return undefined;
+    }
+
+    findLastIndex(predicate: { (value: T, index: number, array: T[]): unknown }, thisArg?: any): number {
+        // Bind the predicate function to thisArg if provided
+        const boundPredicate = thisArg !== undefined
+            ? predicate.bind(thisArg)
+            : predicate;
+
+        // Test each element against the predicate
+        for (let i = this.length; i >= 0; i--) {
+            const value = this.at(i);
+            if (value !== undefined && boundPredicate(value, i, Array.from(this))) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    flatMap<U, This = undefined>(callback: {
+        (value: T, index: number, array: T[]): (U | readonly U[])
+    }, thisArg?: This): ShareableArray<U> {
+        // Bind the callback function to thisArg if provided
+        const boundCallback = thisArg !== undefined
+            ? callback.bind(thisArg)
+            : callback;
+
+        const result: ShareableArray<U> = new ShareableArray<U>();
+
+        // Iterate through array, apply callback and flatten results
+        for (let i = 0; i < this.length; i++) {
+            const value = this.at(i);
+            if (value !== undefined) {
+                const callbackResult = boundCallback(value, i, Array.from(this));
+                if (Array.isArray(callbackResult)) {
+                    result.push(...callbackResult);
+                } else {
+                    result.push(callbackResult as U);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    includes(searchElement: T, fromIndex?: number): boolean {
+        const len = this.length;
+        let k = fromIndex || 0;
+
+        // Handle negative fromIndex
+        if (k < 0) {
+            k = Math.max(len + k, 0);
+        }
+
+        // Check each element
+        for (let i = k; i < len; i++) {
+            const element = this.at(i);
+            if (element === searchElement) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    * keys(): ArrayIterator<number> {
+        let index = 0;
+        const length = this.length;
+
+        for (let i = 0; i < length; i++) {
+            yield i;
+        }
+    }
+
+    toReversed(): ShareableArray<T> {
+        const result: ShareableArray<T> = new ShareableArray<T>(this.originalOptions);
+        for (let i = this.length - 1; i >= 0; i--) {
+            result.push(this.at(i)!);
+        }
+        return result;
+    }
+
+    toSorted(compareFn?: { (a: T, b: T): number }): ShareableArray<T> {
+        const arr = new ShareableArray<T>(this.originalOptions);
+        arr.push(...this);
+        arr.sort(compareFn);
+        return arr;
+    }
+
+    * values(): ArrayIterator<T> {
+        for (let i = 0; i < this.length; i++) {
+            yield this.readItem(i)!;
+        }
+    }
+
+    toString(): string {
+        return `ShareableArray(${this.length}) [${this.join(', ')}]`;
+    }
 
     /**
      * At what position in the data-array does the next block of free space start? This position is returned as number
@@ -660,16 +782,25 @@ export class ShareableArray<T> {
         return this.decoderBuffer;
     }
 
-    private addItem(index: number, item: T | undefined) {
+    private addOrSetItem(index: number, item: T | undefined) {
         // Check if we need to allocate more space in the index buffer first.
         // Items in the index table are always 4 bytes long (int's)
         if (ShareableArray.INDEX_TABLE_OFFSET + 4 * index >= this.indexMem.byteLength) {
             this.doubleIndexStorage();
         }
 
+        if (index < this.length) {
+            // There is already an item at this position in the array, we have to remove the value currently present
+            // there and then update it with the new item we want to add.
+            this.deleteItem(index);
+        }
+
         if (item === undefined) {
             // We keep track of undefined values in the array by storing a zero at their position in the index buffer.
             this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index, ShareableArray.UNDEFINED_VALUE_IDENTIFIER);
+
+            // We don't have to update the space used in the data array, since this is not increasing by an undefined
+            // value.
         } else {
             // Then, check if we need to allocate more space in the data buffer
             const [valueEncoder, valueEncoderId] = this.getEncoder(item);
@@ -678,7 +809,18 @@ export class ShareableArray<T> {
 
             const dataStart = this.indexView.getUint32(ShareableArray.INDEX_DATA_FREE_START_OFFSET);
             if (dataStart + (maxValueLength + ShareableArray.DATA_OBJECT_OFFSET) >= this.dataMem.byteLength) {
-                this.doubleDataStorage();
+                // We don't have enough space left at the end of the data array. We should now consider if we should just
+                // perform a defragmentation of the data array, or if we need to double the size of the array.
+                const defragRatio = this.indexView.getUint32(ShareableArray.INDEX_TOTAL_USED_SPACE_OFFSET) / this.dataView.byteLength;
+
+                if (
+                    defragRatio < ShareableArray.MIN_DEFRAG_FACTOR &&
+                    this.indexView.getUint32(ShareableArray.INDEX_TOTAL_USED_SPACE_OFFSET) + maxValueLength + ShareableArray.DATA_OBJECT_OFFSET < this.dataView.byteLength
+                ) {
+                    this.defragment();
+                } else {
+                    this.doubleDataStorage();
+                }
             }
 
             // Now, encode this value into the data storage
@@ -696,8 +838,26 @@ export class ShareableArray<T> {
             // Keep track of the exact length in bytes for this value object.
             this.dataView.setUint32(this.freeStart + 4, exactValueLength);
 
-            // Set pointer in index array to the last position.
-            this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index, this.freeStart);
+            // Check if the item we're trying to add is at the end of the array or not
+            if (index === this.length) {
+                // Set pointer in index array to the last position.
+                this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index, this.freeStart);
+            } else {
+                // Shift all items in the array to the right to make space for the new item
+                const currentLength = this.length;
+                for (let i = currentLength; i > index; i--) {
+                    this.indexView.setUint32(
+                        ShareableArray.INDEX_TABLE_OFFSET + 4 * i,
+                        this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * (i - 1))
+                    );
+                }
+                // Set the new item's position in the index array
+                this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index, this.freeStart);
+            }
+
+            // Increase the space used in the data array
+            const usedSpace = this.indexView.getUint32(ShareableArray.INDEX_TOTAL_USED_SPACE_OFFSET);
+            this.indexView.setUint32(ShareableArray.INDEX_TOTAL_USED_SPACE_OFFSET, usedSpace + exactValueLength + ShareableArray.DATA_OBJECT_OFFSET);
 
             // Finally, update the pointer to the next block of available space in the data array
             this.freeStart += exactValueLength + ShareableArray.DATA_OBJECT_OFFSET;
@@ -734,37 +894,26 @@ export class ShareableArray<T> {
         const targetView = new Uint8Array(this.getFittingDecoderBuffer(valueLength), 0, valueLength);
         targetView.set(sourceView);
 
+
         return encoder.decode(targetView);
     }
 
     private deleteItem(index: number): void {
         const dataPos = this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index);
 
-        if (dataPos !== 0) {
-            const valueEncoderId = this.dataView.getUint32(dataPos);
+        if (dataPos !== ShareableArray.UNDEFINED_VALUE_IDENTIFIER) {
             const valueLength = this.dataView.getUint32(dataPos + 4);
 
-            // Check if this is the last item in the data space
-            if (index === this.length - 1) {
-                // Simply free this part of memory
-                this.freeStart -= (valueLength + ShareableArray.DATA_OBJECT_OFFSET);
-            } else {
-                // Since the object is situated in the middle of the array, we need to shift all data that's coming
-                // after this object (in both the index and data buffers).
-
-                const dataPointer = this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index);
-                const deletedObjectSize = valueLength + ShareableArray.DATA_OBJECT_OFFSET;
-
-                // Move all bytes starting from the next encoded block forward in the data array
-                for (let i = dataPointer + deletedObjectSize; i < this.dataMem.byteLength - 4; i += 4) {
-                    this.dataView.setUint32(i - deletedObjectSize, this.dataView.getUint32(i + 4));
-                }
-
-                for (let i = index + 1; i < this.length - 1; i++) {
-                    // Move the next 4 bytes into the previous 4 bytes of the index array
-                    this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * (i - 1), this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i));
-                }
+            // Move the items in the index array that follow the removed index forward (such that the hole in the
+            // index array is removed)
+            for (let i = index; i < this.length; i++) {
+                this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i, this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * (i + 1)));
             }
+
+            // Free the space that was taken by the deleted item. It is not yet erased from memory, that will be
+            // performed by a potential defragmentation task in the future
+            const currentlyUsedSpace = this.indexView.getUint32(ShareableArray.INDEX_TOTAL_USED_SPACE_OFFSET);
+            this.indexView.setUint32(ShareableArray.INDEX_TOTAL_USED_SPACE_OFFSET, currentlyUsedSpace - (valueLength + ShareableArray.DATA_OBJECT_OFFSET));
         }
 
         const previousSize = this.indexView.getUint32(ShareableArray.INDEX_SIZE_OFFSET);
@@ -791,6 +940,43 @@ export class ShareableArray<T> {
 
         this.dataMem = newDataMem;
         this.dataView = new DataView(this.dataMem);
+    }
+
+    /**
+     * Iterate over all objects in the index buffer and reposition them in the data buffer. All objects should be stored
+     * contiguous in the data buffer. This is an expensive operation that involves allocating a new collection of bytes,
+     * copying and moving data around and releasing this block again from memory.
+     */
+    private defragment() {
+        const newData: ArrayBuffer = new ArrayBuffer(this.dataView.byteLength);
+        const newView = new DataView(newData);
+
+        let currentDataStart = 0;
+
+        // Loop over all items that are currently stored in the array (by looking at what's in the index table)
+        // and position them all directly following each other
+        for (let i = 0; i < this.length; i++) {
+            const currentDataPos = this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i);
+            const currentObjectLength = this.dataView.getUint32(currentDataPos + 4) + ShareableArray.DATA_OBJECT_OFFSET;
+
+            // Copy all bytes to the new array
+            for (let i = 0; i < currentObjectLength; i++) {
+                newView.setUint8(currentDataStart + i, this.dataView.getUint8(currentDataPos + i));
+            }
+
+            // Update the position where this is stored in the index array
+            this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i, currentDataStart);
+
+            // Update the starting position in the new defragmented array
+            currentDataStart += currentObjectLength + ShareableArray.DATA_OBJECT_OFFSET;
+        }
+
+        // Replace the data from the old data array with the data in the array
+        const oldArray = new Uint8Array(this.dataMem);
+        oldArray.set(new Uint8Array(newData));
+
+        // Update where the free space in the data array starts again
+        this.freeStart = currentDataStart;
     }
 
     private reset() {

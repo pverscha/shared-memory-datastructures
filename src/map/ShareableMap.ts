@@ -583,9 +583,10 @@ export class ShareableMap<K, V> {
             }
         }
 
-        for (let i = 0; i < this.dataView.byteLength; i += 4) {
-            this.dataView.setUint32(i, newView.getUint32(i));
-        }
+        // Replace the data from the old data array with the data in the array
+        const oldArray = new Uint8Array(this.dataMem);
+        oldArray.set(new Uint8Array(newData));
+
         this.freeStart = newOffset;
     }
 
