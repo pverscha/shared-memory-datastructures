@@ -520,6 +520,64 @@ describe("ShareableArray", () => {
         expect(notFoundIndex).toBe(-1);
     });
 
+    it("should correctly unshift elements to an empty array", () => {
+        const array = new ShareableArray<string>();
+        array.unshift("first");
+        expect(array.length).toBe(1);
+        expect(array.at(0)).toBe("first");
+    });
+
+    it("should correctly unshift multiple elements in sequence", () => {
+        const array = new ShareableArray<string>();
+        array.unshift("third");
+        array.unshift("second");
+        array.unshift("first");
+
+        console.log(array.toString());
+
+        expect(array.length).toBe(3);
+        expect([...array]).toEqual(["first", "second", "third"]);
+    });
+
+    it("should correctly unshift different data types", () => {
+        const array = new ShareableArray<any>();
+        array.unshift(42);
+        array.unshift("test");
+        array.unshift({key: "value"});
+        array.unshift([1, 2, 3]);
+
+        expect(array.length).toBe(4);
+        expect(array.at(0)).toEqual([1, 2, 3]);
+        expect(array.at(1)).toEqual({key: "value"});
+        expect(array.at(2)).toBe("test");
+        expect(array.at(3)).toBe(42);
+    });
+
+    it("should correctly update length after unshift operations", () => {
+        const array = new ShareableArray<number>();
+        expect(array.length).toBe(0);
+
+        array.unshift(1);
+        expect(array.length).toBe(1);
+
+        array.unshift(2);
+        expect(array.length).toBe(2);
+
+        array.unshift(3);
+        expect(array.length).toBe(3);
+    });
+
+    it("should correctly handle multiple items in a single unshift operation", () => {
+        const array = new ShareableArray<number>();
+        array.unshift(1, 2, 3, 4);
+
+        expect(array.length).toBe(4);
+        expect([...array]).toEqual([1, 2, 3, 4]);
+
+        array.unshift(5, 6);
+        expect(array.length).toBe(6);
+        expect([...array]).toEqual([5, 6, 1, 2, 3, 4]);
+    });
 
     it("should correctly check if element exists using includes()", () => {
         const array = new ShareableArray<string>();
@@ -574,6 +632,8 @@ describe("ShareableArray", () => {
         expect(sorted).toBeInstanceOf(ShareableArray);
         expect(customSorted).toBeInstanceOf(ShareableArray);
     });
+    
+    
 });
 
 function generateRandomString() {

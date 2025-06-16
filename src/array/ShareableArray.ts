@@ -462,35 +462,46 @@ export class ShareableArray<T> {
         return this;
     }
 
-    // unshift(...items: T[]): number {
-    //     // Add items to the front of the array
-    //
-    //     if (items.length <= 0) {
-    //         return this.length;
-    //     }
-    //
-    //     const [encoder, encoderId] = this.getEncoder(items[0]);
-    //
-    //     const estimatedRequiredSpace = items.reduce((acc, i) => acc + encoder.maximumLength(i), 0);
-    //
-    //     // First encode all of the objects that should be added into a temporary buffer.
-    //     const tempBuffer = new ArrayBuffer(estimatedRequiredSpace);
-    //     let totalExactSpace = 0;
-    //
-    //     // Also keep track of where these items start in the temp buffer (this information is required to reconstruct the index array further down-the-road).
-    //     const startPositionsNewItems = [];
-    //     for (const item of items) {
-    //         startPositionsNewItems.push(totalExactSpace);
-    //         const encoderArray = new Uint8Array(tempBuffer, totalExactSpace + ShareableArray.DATA_OBJECT_OFFSET, encoder.maximumLength(item));
-    //         const exactSpaceForObject = encoder.encode(item, encoderArray);
-    //         totalExactSpace += (ShareableArray.DATA_OBJECT_OFFSET + exactSpaceForObject);
-    //     }
-    //
-    //     // Now that we've got this information, we should move the pre-existing data in the data array to the end of the array.
-    //     // TODO: continue implementation here
-    //
-    //     return 0;
-    // }
+    unshift(...items: T[]): number {
+        if (items.length <= 0) {
+            return this.length;
+        }
+
+        // Check if we've got enough space in the index array to keep track of this new item.
+        // Check if we need to allocate more space in the index buffer first.
+        // Items in the index table are always 4 bytes long (int's)
+
+        // This needs to be a while loop because it's possible that a lot of items are added through this function and
+        // we have to double the index storage more than once.
+        while (ShareableArray.INDEX_TABLE_OFFSET + 4 * (this.length + items.length) >= this.indexMem.byteLength) {
+            this.doubleIndexStorage();
+        }
+
+        // Push all items in the index array the required amount of positions to the right (to make room for the items
+        // that should be added now)
+        for (let i = this.length - 1; i >= 0; i--) {
+            this.indexView.setUint32(
+                ShareableArray.INDEX_TABLE_OFFSET + 4 * (i + items.length),
+                this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i)
+            );
+        }
+
+        // Store undefined at the first positions (temporarily)
+        for (let i = 0; i < items.length; i++) {
+            this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i, ShareableArray.UNDEFINED_VALUE_IDENTIFIER);
+        }
+
+        // Increase the size of the array
+        const currentSize = this.indexView.getUint32(ShareableArray.INDEX_SIZE_OFFSET);
+        this.indexView.setUint32(ShareableArray.INDEX_SIZE_OFFSET, currentSize + items.length);
+
+        // Overwrite the undefined values with the actual values using the `addOrSetItem` function
+        for (let i = 0; i < items.length; i++) {
+            this.addOrSetItem(i, items[i]);
+        }
+
+        return this.length;
+    }
 
     readonly [Symbol.unscopables]: {
         [K in number | typeof Symbol.iterator | typeof Symbol.unscopables | "length" | "toString" | "toLocaleString" | "pop" | "push" | "concat" | "join" | "reverse" | "shift" | "slice" | "sort" | "splice" | "unshift" | "indexOf" | "lastIndexOf" | "every" | "some" | "forEach" | "map" | "filter" | "reduce" | "reduceRight" | "find" | "findIndex" | "fill" | "copyWithin" | "entries" | "keys" | "values" | "includes" | "flatMap" | "flat" | "at" | "findLast" | "findLastIndex" | "toReversed" | "toSorted" | "toSpliced" | "with"]?: boolean
@@ -901,14 +912,14 @@ export class ShareableArray<T> {
     private deleteItem(index: number): void {
         const dataPos = this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * index);
 
+        // Move the items in the index array that follow the removed index forward (such that the hole in the
+        // index array is removed)
+        for (let i = index; i < this.length; i++) {
+            this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i, this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * (i + 1)));
+        }
+
         if (dataPos !== ShareableArray.UNDEFINED_VALUE_IDENTIFIER) {
             const valueLength = this.dataView.getUint32(dataPos + 4);
-
-            // Move the items in the index array that follow the removed index forward (such that the hole in the
-            // index array is removed)
-            for (let i = index; i < this.length; i++) {
-                this.indexView.setUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * i, this.indexView.getUint32(ShareableArray.INDEX_TABLE_OFFSET + 4 * (i + 1)));
-            }
 
             // Free the space that was taken by the deleted item. It is not yet erased from memory, that will be
             // performed by a potential defragmentation task in the future
