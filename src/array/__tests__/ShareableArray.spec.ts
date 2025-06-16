@@ -23,7 +23,6 @@ describe("ShareableArray", () => {
         expect(array.length).toEqual(randomItemsAmount);
     });
     
-    
 
     it("should correctly return the items that have been added before", () => {
         const array = new ShareableArray<string>();
@@ -532,8 +531,6 @@ describe("ShareableArray", () => {
         array.unshift("third");
         array.unshift("second");
         array.unshift("first");
-
-        console.log(array.toString());
 
         expect(array.length).toBe(3);
         expect([...array]).toEqual(["first", "second", "third"]);

@@ -1,4 +1,4 @@
-export default class TransferableDataStructure {
+export default abstract class TransferableDataStructure {
     // Default size of the decoder buffer that's always reused (in bytes)
     private static readonly DECODER_BUFFER_SIZE = 16384;
 
