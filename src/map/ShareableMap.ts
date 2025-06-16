@@ -5,8 +5,9 @@ import NumberEncoder from "./../encoding/NumberEncoder";
 import GeneralPurposeEncoder from "./../encoding/GeneralPurposeEncoder";
 import ShareableMapOptions from "./ShareableMapOptions";
 import {TransferableState} from "../TransferableState";
+import TransferableDataStructure from "../TransferableDataStructure";
 
-export class ShareableMap<K, V> {
+export class ShareableMap<K, V> extends TransferableDataStructure {
     // The default load factor to which this map should adhere
     private static readonly LOAD_FACTOR = 0.75;
     // Minimum ratio of (used space / total space) in the data table. This ratio indicates what percentage of the
@@ -33,9 +34,6 @@ export class ShareableMap<K, V> {
     // Which position in the index array is used to count the amount of held read locks (=> UInt32)
     private static readonly INDEX_READ_COUNT_OFFSET = 20;
 
-    // Default size of the decoder buffer that's always reused (in bytes)
-    private static readonly DECODER_BUFFER_SIZE = 16384;
-
     /**
      * Lock states for the ShareableMap
      */
@@ -51,11 +49,6 @@ export class ShareableMap<K, V> {
 
     private indexView!: DataView;
     private dataView!: DataView;
-
-    // This buffer can be reused to decode the keys of each pair in the map (and avoids us having to reallocate a new
-    // block of memory for each `get` or `set` operation).
-    private decoderBuffer: ArrayBuffer = new ArrayBuffer(ShareableMap.DECODER_BUFFER_SIZE);
-    private currentDecoderBufferSize: number = ShareableMap.DECODER_BUFFER_SIZE;
 
     private textDecoder: TextDecoder = new TextDecoder();
 
@@ -86,6 +79,8 @@ export class ShareableMap<K, V> {
     constructor(
         options?: ShareableMapOptions<V>,
     ) {
+        super();
+
         this.originalOptions = {...this.defaultOptions, ...options};
 
         this.serializer = this.originalOptions?.serializer;
@@ -523,15 +518,7 @@ export class ShareableMap<K, V> {
         return stringVal;
     }
 
-    private getFittingDecoderBuffer(minimumSize: number): ArrayBuffer {
-        if (this.currentDecoderBufferSize < minimumSize) {
-            const nextPowerOfTwo = 2 ** Math.ceil(Math.log2(minimumSize));
-            this.decoderBuffer = new ArrayBuffer(nextPowerOfTwo);
-            this.currentDecoderBufferSize = nextPowerOfTwo;
-        }
 
-        return this.decoderBuffer;
-    }
 
     private computeHashAndBucket(key: string): [number, number] {
         const hash: number = fast1a32(key);
@@ -819,20 +806,6 @@ export class ShareableMap<K, V> {
 
         this.dataMem = this.allocateMemory(dataSize);
         this.dataView = new DataView(this.dataMem);
-    }
-
-    private allocateMemory(byteSize: number): SharedArrayBuffer | ArrayBuffer {
-        try {
-            return new SharedArrayBuffer(byteSize);
-        } catch (err) {
-            try {
-                // Fallback to non-shared memory
-                console.warn("Shared memory is not supported by this browser. Falling back to non-shared memory.");
-                return new ArrayBuffer(byteSize);
-            } catch (e) {
-                throw new Error(`Could not allocated memory. Tried to allocate ${byteSize} bytes.`);
-            }
-        }
     }
 
     /**

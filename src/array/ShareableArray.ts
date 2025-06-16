@@ -4,8 +4,9 @@ import StringEncoder from "../encoding/StringEncoder";
 import NumberEncoder from "../encoding/NumberEncoder";
 import GeneralPurposeEncoder from "../encoding/GeneralPurposeEncoder";
 import {TransferableState} from "../TransferableState";
+import TransferableDataStructure from "../TransferableDataStructure";
 
-export class ShareableArray<T> {
+export class ShareableArray<T> extends TransferableDataStructure {
     // One UInt32 per object that's stored in this array. This size here is expected to be in bytes (so 4 * initial
     // elements size). The index initially supports storage of 256 / 4 = 64 objects.
     private static readonly DEFAULT_INDEX_SIZE = 256;
@@ -27,9 +28,6 @@ export class ShareableArray<T> {
     // How many bytes in the data object are reserved for metadata (value length, used encoder ID).
     private static readonly DATA_OBJECT_OFFSET = 8;
 
-    // Default size of the decoder buffer that's always reused (in bytes)
-    private static readonly DECODER_BUFFER_SIZE = 16384;
-
     // Since 1 will never be used as an index in the data table array, we can use it to indicate which values
     // are set to undefined in the array.
     private static readonly UNDEFINED_VALUE_IDENTIFIER = 1;
@@ -47,11 +45,6 @@ export class ShareableArray<T> {
     private serializer: Serializable<T> | undefined;
     private originalOptions: ShareableArrayOptions<T>;
 
-    // This buffer can be reused to decode the keys of each pair in the map (and avoids us having to reallocate a new
-    // block of memory for each `get` or `set` operation).
-    private decoderBuffer: ArrayBuffer = new ArrayBuffer(ShareableArray.DECODER_BUFFER_SIZE);
-    private currentDecoderBufferSize: number = ShareableArray.DECODER_BUFFER_SIZE;
-
     private readonly defaultOptions: ShareableArrayOptions<T> = {
         // Empty for now
     };
@@ -60,6 +53,8 @@ export class ShareableArray<T> {
         options?: ShareableArrayOptions<T>,
         ...items: T[]
     ) {
+        super();
+
         this.originalOptions = {...this.defaultOptions, ...options};
         this.serializer = this.originalOptions?.serializer;
 
@@ -783,16 +778,6 @@ export class ShareableArray<T> {
         return ([this.numberEncoder, this.stringEncoder, this.generalPurposeEncoder, this.serializer] as Serializable<any>[])[id];
     }
 
-    private getFittingDecoderBuffer(minimumSize: number): ArrayBuffer {
-        if (this.currentDecoderBufferSize < minimumSize) {
-            const nextPowerOfTwo = 2 ** Math.ceil(Math.log2(minimumSize));
-            this.decoderBuffer = new ArrayBuffer(nextPowerOfTwo);
-            this.currentDecoderBufferSize = nextPowerOfTwo;
-        }
-
-        return this.decoderBuffer;
-    }
-
     private addOrSetItem(index: number, item: T | undefined) {
         // Check if we need to allocate more space in the index buffer first.
         // Items in the index table are always 4 bytes long (int's)
@@ -996,19 +981,5 @@ export class ShareableArray<T> {
 
         this.dataMem = this.allocateMemory(ShareableArray.DEFAULT_DATA_SIZE);
         this.dataView = new DataView(this.dataMem);
-    }
-
-    private allocateMemory(byteSize: number): SharedArrayBuffer | ArrayBuffer {
-        try {
-            return new SharedArrayBuffer(byteSize);
-        } catch (err) {
-            try {
-                // Fallback to non-shared memory
-                console.warn("Shared memory is not supported by this browser. Falling back to non-shared memory.");
-                return new ArrayBuffer(byteSize);
-            } catch (e) {
-                throw new Error(`Could not allocate memory. Tried to allocate ${byteSize} bytes.`);
-            }
-        }
     }
 }
