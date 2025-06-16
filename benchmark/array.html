@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>ShareableArray benchmark</title>
+    </head>
+    <body>
+        <script type="module">
+            // In development mode, import directly from the source
+            import {ShareableArray} from "/src/index.ts";
+
+            function generator() {
+                return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            }
+
+            const generatedStrings = [];
+            const generatedNumbers = [];
+
+            for (let i = 0; i < 2000000; i++) {
+                generatedStrings.push(generator());
+                generatedNumbers.push(Math.random());
+            }
+
+            function benchmarkArray(array, dataset) {
+                let startTime = new Date().getTime();
+                for (const value of dataset) {
+                    array.push(value);
+                }
+                let endTime = new Date().getTime();
+                console.log(`Pushing values took: ${endTime - startTime}ms`);
+
+                startTime = new Date().getTime();
+                for (let i = 0; i < dataset.length; i++) {
+                    array.at(i);
+                }
+                endTime = new Date().getTime();
+                console.log(`Retrieving values took: ${endTime - startTime}ms.`);
+            }
+
+            console.log("Started benchmarking ShareableArray with normal strings...");
+            const array = new ShareableArray();
+            benchmarkArray(array, generatedStrings);
+
+            console.log("Started benchmarking default Array with normal strings...");
+            benchmarkArray([], generatedStrings);
+
+            console.log("Started benchmarking ShareableArray with numbers...");
+            const numbersArray = new ShareableArray();
+            benchmarkArray(numbersArray, generatedNumbers);
+
+            console.log("Started benchmarking default Array with normal strings...");
+            benchmarkArray([], generatedNumbers);
+
+        </script>
+    </body>
+</html>
