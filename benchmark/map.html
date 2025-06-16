@@ -13,15 +13,20 @@
             return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         }
 
-        const keyValuePairs = [];
+        const keyValueStringPairs = [];
+        const keyValueNumberPairs = [];
 
         for (let i = 0; i < 2000000; i++) {
-            keyValuePairs.push([generator(), generator()]);
+            keyValueStringPairs.push([generator(), generator()]);
         }
 
-        function benchmarkMap(map) {
+        for (let i = 0; i < 2000000; i++) {
+            keyValueNumberPairs.push([Math.random(), Math.random()]);
+        }
+
+        function benchmarkMap(map, dataset) {
             let startTime = new Date().getTime();
-            for (const [key, value] of keyValuePairs) {
+            for (const [key, value] of dataset) {
                 map.set(key, value);
             }
             let endTime = new Date().getTime();
@@ -29,7 +34,7 @@
 
             startTime = new Date().getTime();
             let foundItems = 0;
-            for (const [key, value] of keyValuePairs) {
+            for (const [key, value] of dataset) {
                 if (map.has(key)) {
                     foundItems++;
                 }
@@ -38,7 +43,7 @@
             console.log(`Checking has values took: ${endTime - startTime}ms. Found ${foundItems} items.`);
 
             startTime = new Date().getTime();
-            for (const [key, value] of keyValuePairs) {
+            for (const [key, value] of dataset) {
                 map.get(key);
             }
             endTime = new Date().getTime();
@@ -46,13 +51,18 @@
         }
 
         console.log("Started benchmarking ShareableMap with normal strings...");
-        const map = new ShareableMap(keyValuePairs.length);
-        benchmarkMap(map);
+        const map = new ShareableMap({expectedSize: keyValueStringPairs.length});
+        benchmarkMap(map, keyValueStringPairs);
 
-        // console.log(`Read key was called ${map.readKeyCalled} times`)
+        console.log("Started benchmarking default Map with normal strings...");
+        benchmarkMap(new Map(), keyValueStringPairs);
 
-        console.log("Started benchmarking default Map...");
-        benchmarkMap(new Map());
+        console.log("Started benchmarking ShareableMap with number strings...");
+        const numberMap = new ShareableMap({expectedSize: keyValueNumberPairs.length});
+        benchmarkMap(numberMap, keyValueNumberPairs);
+
+        console.log("Started benchmarking default Map with number strings...");
+        benchmarkMap(new Map(), keyValueNumberPairs);
     </script>
 </body>
 </html>

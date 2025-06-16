@@ -1007,7 +1007,7 @@ export class ShareableArray<T> {
                 console.warn("Shared memory is not supported by this browser. Falling back to non-shared memory.");
                 return new ArrayBuffer(byteSize);
             } catch (e) {
-                throw new Error(`Could not allocated memory. Tried to allocate ${byteSize} bytes.`);
+                throw new Error(`Could not allocate memory. Tried to allocate ${byteSize} bytes.`);
             }
         }
     }
