@@ -1,6 +1,10 @@
 
 # Shared Memory Datastructures
 
+<p align="center">
+    <img src="./docs/images/sharedcore_logo.png" alt="logo" height="150px" />
+</p>
+
 ## Key features
 - Implemented on top of SharedArrayBuffers
 - Zero-cost worker communication
@@ -84,7 +88,8 @@ self.onmessage = async (event) => {
 }
 ```
 
-> [!NOTE] Note that the map can still be updated by both workers at the same time.
+> [!NOTE] 
+> Note that the map can still be updated by both workers at the same time.
 > this library itself handles any required synchronization or thread-safety transparently.
 
 ## API
