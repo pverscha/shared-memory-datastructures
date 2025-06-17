@@ -128,8 +128,8 @@ set(key: K, value: V): this
 Sets a key-value pair in the map. If the key already exists, its value is updated.
 
 **Parameters:**
-- : The key to set `key`
-- : The value to store `value`
+- `key`: The key to set 
+- `value`: The value to store
 
 **Returns:** The map instance for chaining
 
@@ -258,8 +258,8 @@ set(index: number, value: T | undefined): this
 Sets the element at the specified index to the given value.  
 
 **Parameters:**
-- : Zero-based index at which to set the value `index`
-- : The value to assign `value`
+- `index`: Zero-based index at which to set the value 
+- `value`: The value to assign 
 
 **Returns:** The array instance for chaining  
 
@@ -295,7 +295,7 @@ delete(index: number): T | undefined
 Removes the element at the specified index and returns the deleted value.  
 
 **Parameters:**
-- : Zero-based index of the element to delete `index`
+- `index`: Zero-based index of the element to delete 
 
 **Returns:** The deleted element, or `undefined` if the index was out of bounds.
 
@@ -312,9 +312,9 @@ splice(start: number, deleteCount: number, ...items: T[]): ShareableArray<T>
 Changes the contents of the array by removing, replacing, or adding elements. 
 
 **Parameters:**
-- : Index at which to start changing the array `start`
-- : Number of elements to remove from the array `deleteCount`
-- : Elements to add to the array beginning at the index `items`
+- `start`: Index at which to start changing the array 
+- `deleteCount`: Number of elements to remove from the array 
+- `items`: Elements to add to the array beginning at the index
 
 **Returns:** A new `ShareableArray` containing the deleted elements.
 
@@ -332,8 +332,8 @@ slice(start?: number, end?: number): ShareableArray<T>
 Creates a new array containing elements from the original array from the `start` index up to, but not including, `end`. 
 
 **Parameters:**
-- : Zero-based index at which to begin extraction (default: 0) `start`
-- : Zero-based index at which to end extraction (default: array length) `end`
+- `start`: Zero-based index at which to begin extraction (default: 0) 
+- `end`: Zero-based index at which to end extraction (default: array length) 
 
 **Returns:** A new `ShareableArray` containing the extracted elements.
 
@@ -350,9 +350,9 @@ toTransferableState(): TransferableState
 Extracts the internal buffers representing the array for efficient transfer between threads.
 
 **Returns:** An object containing:
-- : ArrayBuffer containing the array’s index data `indexBuffer`
-- : ArrayBuffer containing the array’s values `dataBuffer`
-- : String identifier (always "array") `dataType`
+- `indexBuffer`: ArrayBuffer containing the array’s index data 
+- `dataBuffer`: ArrayBuffer containing the array’s values 
+- `dataType`: String identifier (always "array") 
 
 **Example:**
 ```typescript
@@ -373,8 +373,7 @@ Creates a new `ShareableArray` from previously exported state.
 **Parameters:**
 - `state`: The state object returned by `toTransferableState()`
 - (optional): Configuration options:
-  - : Custom serializer for value types (must match the original) `serializer`  
-    `options`
+  - `serializer`: Custom serializer for value types (must match the original)
 
 **Returns:** A new `ShareableArray` instance with the same data as the original.
 
@@ -395,8 +394,8 @@ const recreatedArray = ShareableArray.fromTransferableState<string>(state);
 ### Additional Information
 - The array supports efficient memory management with automatic resizing and defragmentation.
 - Any serializable JavaScript value can be stored as elements.
-- Although it mimics the JavaScript Array API, it is not a true subclass of `Array`.
-- For cross-thread communication, use `toTransferableState()` and `fromTransferableState()` to transfer the array without copying.
+- Although it mimics the JavaScript Array API, it is not a true subclass of `Array` since it cannot 100% guarantee that the semantics remain consistent.
+- For cross-thread communication, use `toTransferableState()` and `fromTransferableState()` to share the array without copying.
 
 ## Advanced information
 
