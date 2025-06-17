@@ -2,7 +2,7 @@
 # Shared Memory Datastructures
 
 <p align="center">
-    <img src="./docs/images/sharedcore_logo.png" alt="logo" height="150px" />
+    <img src="./docs/images/sharedcore_logo.png" alt="logo" height="200px" />
 </p>
 
 ## Key features
