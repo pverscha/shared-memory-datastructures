@@ -97,8 +97,7 @@ See our [API reference](#) for a detailed description of all functions, interfac
 
 ## `ShareableMap`
 > [!NOTE]
-> Since v1.0.0-alpha.1 overwriting existing keys with `set`, and removing keys with `delete` are also supported.
-> This means that the `ShareableMap` now fully supports the `Map` interface as defined by JavaScript.
+> Since v1.0.0-alpha.1 overwriting existing keys with `set`, and removing keys with `delete` are also supported. This means that the `ShareableMap` now fully supports the `Map` interface as defined by JavaScript.
 
 ### Constructor
 ```typescript
@@ -222,9 +221,7 @@ For complete documentation and advanced usage, please refer to the [full documen
 
 ## `ShareableArray`
 > [!NOTE]
-> Available since v1.0.0-alpha.10.  
-> The array implements almost all methods and functions provided by the standard JavaScript Array API (with the same type signatures).  
-> However, it does not implement the JavaScript `Array` interface because it cannot fully adhere to its semantics due to limitations in the JavaScript language.
+> Available since v1.0.0-alpha.10. The array implements almost all methods and functions provided by the standard JavaScript Array API (with the same type signatures). However, it does not implement the JavaScript `Array` interface because it cannot fully adhere to its semantics due to limitations in the JavaScript language.
 
 ### Constructor
 ```typescript
