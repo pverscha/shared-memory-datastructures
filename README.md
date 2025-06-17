@@ -95,7 +95,7 @@ self.onmessage = async (event) => {
 
 See our [API reference](#) for a detailed description of all functions, interfaces and classes supported by this library.
 
-## `ShareableMap`
+## `ShareableMap<K, V>`
 > [!NOTE]
 > Since v1.0.0-alpha.1 overwriting existing keys with `set`, and removing keys with `delete` are also supported. This means that the `ShareableMap` now fully supports the `Map` interface as defined by JavaScript.
 
@@ -219,7 +219,7 @@ const map = ShareableMap.fromTransferableState(receivedState);
 
 For complete documentation and advanced usage, please refer to the [full documentation - coming soon](#).
 
-## `ShareableArray`
+## `ShareableArray<T>`
 > [!NOTE]
 > Available since v1.0.0-alpha.10. The array implements almost all methods and functions provided by the standard JavaScript Array API (with the same type signatures). However, it does not implement the JavaScript `Array` interface because it cannot fully adhere to its semantics due to limitations in the JavaScript language.
 
@@ -273,7 +273,7 @@ at(index: number): T | undefined
 Returns the element at the specified index. Supports negative indices, where -1 refers to the last element.  
 
 **Parameters:**
-- : Zero-based index of the element to retrieve `index`
+- `index`: Zero-based index of the element to retrieve
 
 **Returns:** The element at the specified position, or `undefined` if the index is out of bounds.
 
