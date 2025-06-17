@@ -6,8 +6,8 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'SharedMemoryDatastructures',
-      fileName: (_format: string) => `shared-memory-datastructures.js`,
+      name: 'SharedCore',
+      fileName: (_format: string) => `shared-core.js`,
       formats: ['es'],
     },
     sourcemap: true,

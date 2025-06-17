@@ -1,8 +1,8 @@
 {
-  "name": "shared-memory-datastructures",
+  "name": "shared-core",
   "version": "1.0.0-alpha.10",
-  "description": "JavaScript Map implementation that uses a ShareableBuffer under the hood and can be passed to workers copy-free.",
-  "main": "dist/shared-memory-datastructures.js",
+  "description": "High-performance, thread-safe data structures for JavaScript and TypeScript, powered by SharedArrayBuffer. Zero-copy, zero-hassle, shared memory at your core.",
+  "main": "dist/shared-core.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist"
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pverscha/SharedMemoryDatastructures.git"
+    "url": "git+https://github.com/pverscha/SharedCore.git"
   },
   "keywords": [
     "Map"
@@ -21,9 +21,9 @@
   "author": "Pieter Verschaffelt",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/pverscha/SharedMemoryDatastructures/issues"
+    "url": "https://github.com/pverscha/SharedCore/issues"
   },
-  "homepage": "https://github.com/pverscha/SharedMemoryDatastructures#readme",
+  "homepage": "https://github.com/pverscha/SharedCore#readme",
   "dependencies": {
     "fnv-plus": "^1.3.1"
   },
