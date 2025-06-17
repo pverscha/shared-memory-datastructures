@@ -3,12 +3,14 @@
 </p>
 
 ## Key features
-- Implemented on top of SharedArrayBuffers
-- Zero-cost worker communication
-- Maximum transparency
-- Built for performance
-- Thread-safe
-- Automatic memory management (resizes automatically when required)
+High-performance, thread-safe data structures for JavaScript and TypeScript, powered by SharedArrayBuffer. 
+Zero-copy, zero-hassle, shared memory at your core.
+
+- **Zero-cost data sharing:** Avoid serialization and transfer overhead between Web Workers or threads.
+- **Thread-safe by design:** Synchronization is handled internally — no locks, races, or guesswork.
+- **Familiar API:** Drop-in replacements for JavaScript's native Map and Array, with full TypeScript support.
+- **Built for performance:** Optimized for speed-critical, concurrent workloads.
+- **Automatic memory management:** Resizes automatically when necessary.
 
 ## Introduction
 This package is intended to speed up the communication time between different JavaScript threads by exposing data structures that internally use a `SharedArrayBuffer` to store all required information. 
