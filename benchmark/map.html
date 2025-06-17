@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ShareableMap benchmark</title>
+</head>
+<body>
+    <script type="module">
+        // In development mode, import directly from the source
+        import {ShareableMap} from "/src/index.ts";
+
+        function generator() {
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+
+        const keyValueStringPairs = [];
+        const keyValueNumberPairs = [];
+
+        for (let i = 0; i < 2000000; i++) {
+            keyValueStringPairs.push([generator(), generator()]);
+        }
+
+        for (let i = 0; i < 2000000; i++) {
+            keyValueNumberPairs.push([Math.random(), Math.random()]);
+        }
+
+        function benchmarkMap(map, dataset) {
+            let startTime = new Date().getTime();
+            for (const [key, value] of dataset) {
+                map.set(key, value);
+            }
+            let endTime = new Date().getTime();
+            console.log(`Setting values took: ${endTime - startTime}ms`);
+
+            startTime = new Date().getTime();
+            let foundItems = 0;
+            for (const [key, value] of dataset) {
+                if (map.has(key)) {
+                    foundItems++;
+                }
+            }
+            endTime = new Date().getTime();
+            console.log(`Checking has values took: ${endTime - startTime}ms. Found ${foundItems} items.`);
+
+            startTime = new Date().getTime();
+            for (const [key, value] of dataset) {
+                map.get(key);
+            }
+            endTime = new Date().getTime();
+            console.log(`Getting values took: ${endTime - startTime}ms`);
+        }
+
+        console.log("Started benchmarking ShareableMap with normal strings...");
+        const map = new ShareableMap({expectedSize: keyValueStringPairs.length});
+        benchmarkMap(map, keyValueStringPairs);
+
+        console.log("Started benchmarking default Map with normal strings...");
+        benchmarkMap(new Map(), keyValueStringPairs);
+
+        console.log("Started benchmarking ShareableMap with number strings...");
+        const numberMap = new ShareableMap({expectedSize: keyValueNumberPairs.length});
+        benchmarkMap(numberMap, keyValueNumberPairs);
+
+        console.log("Started benchmarking default Map with number strings...");
+        benchmarkMap(new Map(), keyValueNumberPairs);
+    </script>
+</body>
+</html>

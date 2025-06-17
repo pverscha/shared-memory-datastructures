@@ -21,4 +21,13 @@ export default defineConfig({
   resolve: {
     extensions: ['.tsx', '.ts', '.js'],
   },
+  // Add server configuration for SharedArrayBuffer support
+  server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    },
+    // Configure the server to open the benchmark HTML file
+    open: '/benchmark/index.html'
+  }
 });

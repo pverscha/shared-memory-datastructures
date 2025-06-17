@@ -1,57 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Title</title>
-</head>
-<body>
-    <script type="module">
-        import {ShareableMap} from "./../dist/shared-memory-datastructures.js";
+    <head>
+        <meta charset="UTF-8">
+        <title>ShareableMap and ShareableArray Benchmarks</title>
+    </head>
+    <body>
+        <h1>In-Browser Benchmarks</h1>
 
-        function generator() {
-            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-        }
+        <p>This page provides access to performance benchmarks for:</p>
 
-        const keyValuePairs = [];
+        <ul>
+            <li><a href="map.html">ShareableMap Benchmarks</a></li>
+            <li><a href="array.html">ShareableArray Benchmarks</a></li>
+        </ul>
 
-        for (let i = 0; i < 2000000; i++) {
-            keyValuePairs.push([generator(), generator()]);
-        }
-
-        function benchmarkMap(map) {
-            let startTime = new Date().getTime();
-            for (const [key, value] of keyValuePairs) {
-                map.set(key, value);
-            }
-            let endTime = new Date().getTime();
-            console.log(`Setting values took: ${endTime - startTime}ms`);
-
-            startTime = new Date().getTime();
-            let foundItems = 0;
-            for (const [key, value] of keyValuePairs) {
-                if (map.has(key)) {
-                    foundItems++;
-                }
-            }
-            endTime = new Date().getTime();
-            console.log(`Checking has values took: ${endTime - startTime}ms. Found ${foundItems} items.`);
-
-            startTime = new Date().getTime();
-            for (const [key, value] of keyValuePairs) {
-                map.get(key);
-            }
-            endTime = new Date().getTime();
-            console.log(`Getting values took: ${endTime - startTime}ms`);
-        }
-
-        console.log("Started benchmarking ShareableMap with normal strings...");
-        const map = new ShareableMap(keyValuePairs.length);
-        benchmarkMap(map);
-
-        // console.log(`Read key was called ${map.readKeyCalled} times`)
-
-        console.log("Started benchmarking default Map...");
-        benchmarkMap(new Map());
-    </script>
-</body>
+        <p>Click on the links above to run the respective benchmarks in your browser.</p>
+    </body>
 </html>
