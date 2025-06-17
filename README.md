@@ -105,13 +105,12 @@ See our [API reference](#) for a detailed description of all functions, interfac
 constructor(options?: ShareableMapOptions<V>)
 ```
 Creates a new ShareableMap instance.
+
 **Parameters:**
 - (optional): Configuration options for the map
-    - : Expected number of elements to be stored (default: 1024) `expectedSize`
-    - : Expected average size in bytes per value (default: 256) `averageBytesPerValue`
-    - : Optional custom serializer for value types `serializer`
-
-`options`
+    - `expectedSize`: Expected number of elements to be stored (default: 1024) 
+    - `averageBytesPerValue`: Expected average size in bytes per value (default: 256) 
+    - `serializer`: Optional custom serializer for value types
 
 **Example:**
 ```typescript
@@ -125,12 +124,15 @@ const map = new ShareableMap<string, object>({
 ```typescript
 set(key: K, value: V): this
 ```
+
 Sets a key-value pair in the map. If the key already exists, its value is updated.
+
 **Parameters:**
 - : The key to set `key`
 - : The value to store `value`
 
 **Returns:** The map instance for chaining
+
 **Example:**
 ```typescript
 map.set('user', { id: 1, name: 'John' });
@@ -141,10 +143,12 @@ map.set('user', { id: 1, name: 'John' });
 get(key: K): V | undefined
 ```
 Retrieves a value from the map by its key.
+
 **Parameters:**
-- : The key to look up `key`
+- `key`: The key to look up 
 
 **Returns:** The stored value or if the key doesn't exist `undefined`
+
 **Example:**
 ```typescript
 const user = map.get('user'); // { id: 1, name: 'John' } or undefined
@@ -155,10 +159,12 @@ const user = map.get('user'); // { id: 1, name: 'John' } or undefined
 has(key: K): boolean
 ```
 Checks if a key exists in the map.
+
 **Parameters:**
-- : The key to check for `key`
+- `key`: The key to check for 
 
 **Returns:** `true` if the key exists, `false` otherwise
+
 **Example:**
 ```typescript
 if (map.has('user')) {
@@ -171,10 +177,11 @@ if (map.has('user')) {
 toTransferableState(): TransferableState
 ```
 Extracts the internal buffers representing the map for efficient transfer between threads.
+
 **Returns:** An object containing:
-- : ArrayBuffer containing the map's index data `indexBuffer`
-- : ArrayBuffer containing the map's values `dataBuffer`
-- : String identifier (always "map") `dataType`
+- `indexBuffer`: ArrayBuffer containing the map's index data 
+- `dataBuffer`: ArrayBuffer containing the map's values 
+- `dataType`: String identifier (always "map") 
 
 **Example:**
 ```typescript
@@ -190,11 +197,15 @@ static fromTransferableState<K, V>(
 ): ShareableMap<K, V>
 ```
 Creates a new ShareableMap from previously exported state.
+
 **Parameters:**
 - `state`: The state object returned by `toTransferableState()`
-- (optional): Configuration options (same as constructor) `options`
+- `options` (optional): Configuration options (same as constructor) 
 
 **Returns:** A new ShareableMap instance with the same data as the original
+
+**Throws:** `TypeError` if the provided state is invalid for an array.
+
 **Example:**
 ```typescript
 // In a worker or after receiving the state
@@ -220,11 +231,11 @@ For complete documentation and advanced usage, please refer to the [full documen
 constructor(options?: ShareableArrayOptions<T>, ...items: T[])
 ```
 Creates a new `ShareableArray` instance.  
+
 **Parameters:**
 - (optional): Configuration options:
-  - : Optional custom serializer for value types `serializer`  
-    `options`
-- : Initial values to populate the array with `items`
+  - `serializer`: Optional custom serializer for value types
+- `items`: Initial values to populate the array with 
 
 **Example:**
 ```typescript
@@ -245,11 +256,13 @@ const customArray = new ShareableArray<MyObject>({
 set(index: number, value: T | undefined): this
 ```
 Sets the element at the specified index to the given value.  
+
 **Parameters:**
 - : Zero-based index at which to set the value `index`
 - : The value to assign `value`
 
 **Returns:** The array instance for chaining  
+
 **Example:**
 ```typescript
 const array = new ShareableArray<number>(undefined, 1, 2, 3);
@@ -261,10 +274,12 @@ array.set(1, 42); // array now contains [1, 42, 3]
 at(index: number): T | undefined
 ```
 Returns the element at the specified index. Supports negative indices, where -1 refers to the last element.  
+
 **Parameters:**
 - : Zero-based index of the element to retrieve `index`
 
-**Returns:** The element at the specified position, or `undefined` if the index is out of bounds  
+**Returns:** The element at the specified position, or `undefined` if the index is out of bounds.
+
 **Example:**
 ```typescript
 const array = new ShareableArray<number>(undefined, 10, 20, 30);
@@ -278,10 +293,12 @@ array.at(5);  // Returns undefined
 delete(index: number): T | undefined
 ```
 Removes the element at the specified index and returns the deleted value.  
+
 **Parameters:**
 - : Zero-based index of the element to delete `index`
 
-**Returns:** The deleted element, or `undefined` if the index was out of bounds  
+**Returns:** The deleted element, or `undefined` if the index was out of bounds.
+
 **Example:**
 ```typescript
 const array = new ShareableArray<string>(undefined, "apple", "banana", "cherry");
@@ -292,13 +309,15 @@ const deleted = array.delete(1); // Returns "banana", array now contains ["apple
 ```typescript
 splice(start: number, deleteCount: number, ...items: T[]): ShareableArray<T>
 ```
-Changes the contents of the array by removing, replacing, or adding elements.  
+Changes the contents of the array by removing, replacing, or adding elements. 
+
 **Parameters:**
 - : Index at which to start changing the array `start`
 - : Number of elements to remove from the array `deleteCount`
 - : Elements to add to the array beginning at the index `items`
 
-**Returns:** A new `ShareableArray` containing the deleted elements  
+**Returns:** A new `ShareableArray` containing the deleted elements.
+
 **Example:**
 ```typescript
 const array = new ShareableArray<number>(undefined, 1, 2, 3, 4);
@@ -310,12 +329,14 @@ const removed = array.splice(1, 2, 5, 6); // array now contains [1, 5, 6, 4]
 ```typescript
 slice(start?: number, end?: number): ShareableArray<T>
 ```
-Creates a new array containing elements from the original array from the `start` index up to, but not including, `end`.  
+Creates a new array containing elements from the original array from the `start` index up to, but not including, `end`. 
+
 **Parameters:**
 - : Zero-based index at which to begin extraction (default: 0) `start`
 - : Zero-based index at which to end extraction (default: array length) `end`
 
-**Returns:** A new `ShareableArray` containing the extracted elements  
+**Returns:** A new `ShareableArray` containing the extracted elements.
+
 **Example:**
 ```typescript
 const array = new ShareableArray<number>(undefined, 1, 2, 3, 4, 5);
@@ -326,7 +347,8 @@ const sliced = array.slice(1, 4); // Returns a new ShareableArray with [2, 3, 4]
 ```typescript
 toTransferableState(): TransferableState
 ```
-Extracts the internal buffers representing the array for efficient transfer between threads.  
+Extracts the internal buffers representing the array for efficient transfer between threads.
+
 **Returns:** An object containing:
 - : ArrayBuffer containing the array’s index data `indexBuffer`
 - : ArrayBuffer containing the array’s values `dataBuffer`
@@ -346,15 +368,18 @@ static fromTransferableState<T>(
   options?: ShareableArrayOptions<T>
 ): ShareableArray<T>
 ```
-Creates a new `ShareableArray` from previously exported state.  
+Creates a new `ShareableArray` from previously exported state.
+
 **Parameters:**
 - `state`: The state object returned by `toTransferableState()`
 - (optional): Configuration options:
   - : Custom serializer for value types (must match the original) `serializer`  
     `options`
 
-**Returns:** A new `ShareableArray` instance with the same data as the original  
-**Throws:** `TypeError` if the state is not for an array  
+**Returns:** A new `ShareableArray` instance with the same data as the original.
+
+**Throws:** `TypeError` if the provided state is invalid for an array.
+
 **Example:**
 ```typescript
 // In thread 1:
