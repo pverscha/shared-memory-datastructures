@@ -29,7 +29,7 @@
         <path d="M485.504,110.119L410.519,110.119" style="fill:none;stroke:rgb(15,46,71);stroke-width:14px;stroke-linecap:butt;"/>
     </g>
     <g transform="matrix(1,0,0,1,-5.95152,-19.1168)">
-        <text x="107.916px" y="398.705px" style="font-family:'OpenSansRoman-Bold', 'Open Sans';font-size:72px;">SharedCore</text>
-        <text x="42.06px" y="446.705px" style="font-family:'OpenSansRoman-Bold', 'Open Sans';font-size:36px;">Shared Memory Datastructures</text>
+        <text x="41.905px" y="416.939px" style="font-family:'OpenSansRoman-Bold', 'Open Sans';font-size:96px;">SharedCore</text>
+        <text x="42.06px" y="464.939px" style="font-family:'OpenSansRoman-Bold', 'Open Sans';font-size:36px;">Shared Memory Datastructures</text>
     </g>
 </svg>
